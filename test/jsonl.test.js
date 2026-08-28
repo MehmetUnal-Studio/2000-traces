@@ -42,3 +42,31 @@ test('import of a partial file (no end line) is valid and flagged', () => {
 test('import rejects files that do not start with a session header', () => {
   assert.throws(() => importSession(['{"kind":"event"}']));
 });
+
+test('import tolerates a torn final line (crash-truncated take)', () => {
+  const s = importSession([
+    headerLine({ sessionId: 's1', durationMs: 90000, visualSeed: 3, schemaVersion: 1 }, 'test'),
+    eventLine({ seq: 0, tMs: 0, participantId: 'A1', zone: 'A', seatNumber: 1, serverTimestampMs: 100, eventType: 'noteOn' }, { t: 1 }),
+    '{"kind":"event","tru', // power-cut mid-flush: half a JSON line at EOF
+  ]);
+  assert.equal(s.events.length, 1, 'torn tail skipped, prior events kept');
+  assert.equal(s.complete, false);
+  assert.equal(s.truncatedTail, true, 'truncation is reported');
+});
+
+test('import of a clean file reports no truncated tail', () => {
+  const s = importSession([
+    headerLine({ sessionId: 's1', durationMs: 90000, visualSeed: 3, schemaVersion: 1 }, 'test'),
+    eventLine({ seq: 0, tMs: 0, participantId: 'A1', zone: 'A', seatNumber: 1, serverTimestampMs: 100, eventType: 'noteOn' }, { t: 1 }),
+    endLine({ stats: { stored: 1 }, participants: 1, events: 1, anchorServerMs: 100, endedAtLocalMs: 1 }),
+  ]);
+  assert.equal(s.truncatedTail, false);
+});
+
+test('import still throws on a corrupt line in the middle of the file', () => {
+  assert.throws(() => importSession([
+    headerLine({ sessionId: 's1', durationMs: 90000, visualSeed: 3, schemaVersion: 1 }, 'test'),
+    '{"kind":"event","tru', // corrupt line FOLLOWED by more data = real corruption
+    eventLine({ seq: 0, tMs: 0, participantId: 'A1', zone: 'A', seatNumber: 1, serverTimestampMs: 100, eventType: 'noteOn' }, { t: 1 }),
+  ]), SyntaxError);
+});

@@ -1,7 +1,7 @@
 // test/viz-pack.test.js
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, statSync, appendFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { recordFromSource } from '../src/recorder.js';
@@ -118,6 +118,75 @@ test('strokes pair noteOn with noteOff on the same lane+finger', async () => {
   }
 });
 
+const HEADER = JSON.stringify({ kind: 'session', schemaVersion: 1, sessionId: 'hand', durationMs: 90000, visualSeed: 1 });
+const ev = (o) => JSON.stringify({ kind: 'event', participantId: 'A1', zone: 'A', seatNumber: 1, u: 0.5, v: 0.5, ...o });
+
+test('packSession tolerates a torn final line (crash-truncated take)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'traces-pack-'));
+  const { out, summary } = await makeSession(dir);
+  appendFileSync(out, '{"kind":"event","tru'); // power-cut mid-flush: half a line at EOF
+  const manifest = await packSession(out, join(dir, 'pack'));
+  assert.equal(manifest.truncatedTail, true, 'truncation is reported in the manifest');
+  assert.equal(manifest.eventCount, summary.stats.stored, 'all intact events survive');
+});
+
+test('packSession of a clean file reports no truncated tail', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'traces-pack-'));
+  const { out } = await makeSession(dir);
+  const manifest = await packSession(out, join(dir, 'pack'));
+  assert.equal(manifest.truncatedTail, false);
+});
+
+test('packSession still throws on a corrupt mid-file line', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'traces-pack-'));
+  const out = join(dir, 's.jsonl');
+  writeFileSync(out, [
+    HEADER,
+    '{"kind":"event","tru', // corrupt line FOLLOWED by more data = real corruption
+    ev({ eventType: 'noteOn', finger: 0, line: 1, tMs: 100 }),
+  ].join('\n') + '\n');
+  await assert.rejects(() => packSession(out, join(dir, 'pack')), SyntaxError);
+});
+
+test('disconnect closes open strokes on every finger, not just finger 0', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'traces-pack-'));
+  const out = join(dir, 's.jsonl');
+  writeFileSync(out, [
+    HEADER,
+    ev({ eventType: 'noteOn', finger: 1, line: 2, tMs: 10000 }),
+    ev({ eventType: 'noteOn', finger: 0, line: 1, tMs: 10500 }),
+    ev({ eventType: 'disconnect', tMs: 12000 }), // adapter emits no finger field on t:-1
+  ].join('\n') + '\n');
+  const manifest = await packSession(out, join(dir, 'pack'));
+  assert.equal(manifest.strokeCount, 2);
+  const buf = readFileSync(join(dir, 'pack', 'strokes.bin'));
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  for (let i = 0; i < manifest.strokeCount; i++) {
+    const t1 = dv.getUint32(i * STROKE_RECORD_BYTES + 8, true);
+    assert.equal(t1, 12000, 'every open stroke ends at the disconnect, not durationMs');
+  }
+});
+
+test('already-recorded negative or fractional tMs still packs (clamped, not thrown)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'traces-pack-'));
+  const out = join(dir, 's.jsonl');
+  writeFileSync(out, [
+    HEADER,
+    ev({ eventType: 'noteOn', finger: 0, line: 1, tMs: -1 }),      // pre-guard recording
+    ev({ eventType: 'fingerMove', finger: 0, line: 1, tMs: 500.5 }), // float server ts
+    ev({ eventType: 'noteOff', finger: 0, line: 1, tMs: 1000 }),
+  ].join('\n') + '\n');
+  const manifest = await packSession(out, join(dir, 'pack')); // must not throw RangeError
+  assert.equal(manifest.eventCount, 3);
+  const buf = readFileSync(join(dir, 'pack', 'events.bin'));
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  assert.equal(dv.getUint32(0 * EVENT_RECORD_BYTES + 6, true), 0, 'negative tMs clamps to 0');
+  assert.equal(dv.getUint32(1 * EVENT_RECORD_BYTES + 6, true), 501, 'fractional tMs rounds');
+  const sb = readFileSync(join(dir, 'pack', 'strokes.bin'));
+  const sdv = new DataView(sb.buffer, sb.byteOffset, sb.byteLength);
+  assert.equal(sdv.getUint32(0 * STROKE_RECORD_BYTES + 4, true), 0, 'stroke t0 clamps too');
+});
+
 test('packing updates the directory-level index.json', async () => {
   const { mkdtempSync: mkd, readFileSync: rf } = await import('node:fs');
   const { join: j } = await import('node:path');
@@ -129,4 +198,30 @@ test('packing updates the directory-level index.json', async () => {
   const idx = JSON.parse(rf(j(dir, 'packs', 'index.json'), 'utf8'));
   assert.deepEqual(idx.packs.map((p) => p.name), ['b', 'a']);
   assert.equal(idx.packs[0].sessionId, 'pack-test');
+});
+
+test('index.json is written atomically and self-heals from the pack directories', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'traces-pack-'));
+  const { out } = await makeSession(dir);
+  const packsDir = join(dir, 'packs');
+  await packSession(out, join(packsDir, 'a'));
+  await packSession(out, join(packsDir, 'b'));
+  // temp-file + rename: no *.tmp residue after sequential packs, content correct
+  assert.deepEqual(readdirSync(packsDir).filter((n) => n.endsWith('.tmp')), []);
+  let idx = JSON.parse(readFileSync(join(packsDir, 'index.json'), 'utf8'));
+  assert.deepEqual([...idx.packs.map((p) => p.name)].sort(), ['a', 'b']);
+  // a torn/garbage index (crashed concurrent writer) must not wipe history:
+  // the next pack rebuilds the index from the pack directories on disk
+  writeFileSync(join(packsDir, 'index.json'), '{"packs":[{"na'); // torn mid-write
+  await packSession(out, join(packsDir, 'c'));
+  idx = JSON.parse(readFileSync(join(packsDir, 'index.json'), 'utf8'));
+  assert.deepEqual([...idx.packs.map((p) => p.name)].sort(), ['a', 'b', 'c'],
+    'previously packed sessions survive a torn index');
+  assert.equal(idx.packs[0].name, 'c', 'freshest pack listed first');
+  for (const p of idx.packs) {
+    assert.equal(p.sessionId, 'pack-test');
+    assert.equal(typeof p.lanes, 'number');
+    assert.equal(typeof p.events, 'number');
+    assert.equal(typeof p.strokes, 'number');
+  }
 });

@@ -23,7 +23,7 @@ test('full 384-participant capture: counts, identity, monotonicity, round-trip',
   // Every event accounted for: stored + rejected == received (criterion 11 bookkeeping)
   const st = summary.stats;
   assert.equal(st.received, 263986);
-  assert.equal(st.stored + st.malformed + st.duplicates + st.late, st.received);
+  assert.equal(st.stored + st.malformed + st.duplicates + st.late + st.early, st.received);
   assert.equal(st.malformed, 0);
 
   // Criterion 5: a seat's complete trace is isolable and internally ordered

@@ -18,7 +18,7 @@ test('records a file source to JSONL and finalizes', async () => {
     outPath: out, sessionId: 'rec-test', visualSeed: 42, source: `file:${FIXTURE}`,
   });
   assert.equal(summary.stats.stored > 0, true);
-  assert.equal(summary.stats.stored + summary.stats.malformed + summary.stats.duplicates + summary.stats.late,
+  assert.equal(summary.stats.stored + summary.stats.malformed + summary.stats.duplicates + summary.stats.late + summary.stats.early,
     summary.stats.received);
   const imported = importSession(readFileSync(out, 'utf8').split('\n'));
   assert.equal(imported.meta.sessionId, 'rec-test');

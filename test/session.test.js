@@ -59,6 +59,24 @@ test('events past durationMs are late; malformed and duplicates are counted', ()
   assert.equal(ss.stats().stored, 2);
 });
 
+test('events whose ts precedes the anchor are rejected and counted early', () => {
+  const ss = createSession({ sessionId: 't', visualSeed: 1 });
+  ss.arm(); ss.start();
+  assert.equal(ss.stats().early, 0); // counter exists from init
+  assert.equal(ss.ingest(NOTE(0, 1, 1000000), 0).accepted, true); // anchors the clock
+  // another upstream shard stamped 1 ms before the anchor: tMs would be -1
+  const r = ss.ingest(NOTE(0, 2, 999999), 1);
+  assert.deepEqual(r, { accepted: false, reason: 'before-anchor' });
+  assert.equal(ss.stats().early, 1);
+  assert.equal(ss.stats().stored, 1);
+  // stats invariant with the new counter
+  const st = ss.stats();
+  assert.equal(st.stored + st.malformed + st.duplicates + st.late + st.early, st.received);
+  ss.stop();
+  const done = ss.finalize();
+  assert.equal(done.stats.early, 1, 'early reaches the finalize/endLine summary');
+});
+
 test('snapshot frames are silently skipped (not counted malformed)', () => {
   const ss = createSession({ sessionId: 't', visualSeed: 1 });
   ss.arm(); ss.start();
