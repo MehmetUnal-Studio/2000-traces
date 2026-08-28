@@ -1,7 +1,7 @@
 // src/server.js
 import { createServer } from 'node:http';
 import { readFileSync, readdirSync, statSync, createReadStream, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { recordFromSource } from './recorder.js';
 import { loadEnv } from './env.js';
 import { liveSource } from './sources/live-source.js';
@@ -61,14 +61,27 @@ export function createControlServer({ sessionsDir, sourceFactory, durationMs = 9
     res.end(JSON.stringify(obj));
   }
 
+  // The raw request path is attacker-controlled (curl and DNS-rebinding pages
+  // bypass browser `..` normalization), so only serve plain file names that
+  // resolve inside sessionsDir. Returns the safe absolute path, or null.
+  function sessionFilePath(url) {
+    let name;
+    try { name = decodeURIComponent(url.split('?')[0].slice('/sessions/'.length)); }
+    catch { return null; } // malformed percent-encoding
+    if (!name || name === '.' || name === '..') return null;
+    if (name.includes('/') || name.includes('\\') || name.includes('\0')) return null;
+    const f = resolve(sessionsDir, name);
+    return f.startsWith(resolve(sessionsDir) + sep) ? f : null;
+  }
+
   return {
     listen(port) {
       server = createServer((req, res) => {
         const key = `${req.method} ${req.url.split('?')[0]}`;
         if (handlers[key]) return handlers[key](req, res);
         if (req.method === 'GET' && req.url.startsWith('/sessions/')) {
-          const f = join(sessionsDir, req.url.slice('/sessions/'.length));
-          if (existsSync(f)) { res.writeHead(200, { 'Content-Type': 'application/x-ndjson' }); return createReadStream(f).pipe(res); }
+          const f = sessionFilePath(req.url);
+          if (f && existsSync(f)) { res.writeHead(200, { 'Content-Type': 'application/x-ndjson' }); return createReadStream(f).pipe(res); }
         }
         if (req.method === 'GET' && (req.url === '/' || req.url === '/index.html')) {
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -76,7 +89,8 @@ export function createControlServer({ sessionsDir, sourceFactory, durationMs = 9
         }
         res.writeHead(404); res.end('not found');
       });
-      return new Promise((r) => server.listen(port, () => r()));
+      // Local operator panel: bind loopback only, never the venue LAN.
+      return new Promise((r) => server.listen(port, '127.0.0.1', () => r()));
     },
     port: () => server.address().port,
     close: () => new Promise((r) => server.close(r)),
