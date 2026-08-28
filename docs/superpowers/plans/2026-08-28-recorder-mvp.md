@@ -652,7 +652,7 @@ File format (one JSON object per line, streamed in this order):
 2. `{"kind":"event","seq":..,"tMs":..,"participantId":..,...,"raw":{...}}` — per stored event, immediately.
 3. `{"kind":"end","stats":{...},"participants":N,"events":N,"anchorServerMs":..,"endedAtLocalMs":..}` — at finalize. A file without an `end` line is a valid partial recording.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```js
 // test/jsonl.test.js
@@ -702,11 +702,11 @@ test('import rejects files that do not start with a session header', () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npm test` — Expected: FAIL, cannot find `../src/jsonl.js`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```js
 // src/jsonl.js
@@ -739,11 +739,11 @@ export function importSession(lines) {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `npm test` — Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/jsonl.js test/jsonl.test.js
