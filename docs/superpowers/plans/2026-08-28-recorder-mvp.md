@@ -1153,7 +1153,7 @@ git commit -m "feat: authenticated live SSE source with reconnect backoff"
 
 The operator flow the brief requires: arm → start (90 s auto-stop) → stop early → status → list sessions. Export = the JSONL files already on disk (served for download). Replay/still-image belong to the visual milestone.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```js
 // test/server.test.js
@@ -1195,11 +1195,11 @@ test('arm/start/stop lifecycle over HTTP', async () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npm test` — Expected: FAIL, cannot find `../src/server.js`.
 
-- [ ] **Step 3: Implement server**
+- [x] **Step 3: Implement server**
 
 ```js
 // src/server.js
@@ -1300,7 +1300,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
 **Implementation note for the executor:** `recordFromSource` currently creates its session internally, so `/api/status` cannot see live per-event stats mid-run. Extend `recordFromSource` with an optional `onSession(session)` callback (one line: call it right after `createSession`), and in `/api/start` pass `onSession: (s) => { current.session = s; }`. Update `test/recorder.test.js` accordingly (add a test that `onSession` fires with a session whose `state()` is `RECORDING`). The Task 8 code block already establishes the pattern; this is the only cross-task modification in the plan.
 
-- [ ] **Step 4: Implement the operator page**
+- [x] **Step 4: Implement the operator page**
 
 ```html
 <!-- ui/index.html -->
@@ -1368,11 +1368,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 </html>
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `npm test` — Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/server.js ui/index.html test/server.test.js
