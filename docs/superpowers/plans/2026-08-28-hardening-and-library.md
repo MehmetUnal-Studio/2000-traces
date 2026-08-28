@@ -56,11 +56,11 @@
 
 **Files:** `src/server.js` (+ small helper `src/library.js` if cleaner); tests in `test/library.test.js` (new).
 
-- [ ] Step 1: Failing tests for `GET /api/library`: returns `{ sessions:[{file, bytes, mtimeMs, sessionId, label, complete, events, participants, packName}], packs:[{name, sessionId, label, lanes, events, strokes, bytes}] }`. Session metadata comes from reading ONLY the first line (header) and the last ~8 KB (end record if present) of each JSONL — never the whole file (they reach 700 MB). `packName` joined via packs index sessionId.
-- [ ] Step 2: Failing tests for `POST /api/pack` body `{file}`: packs an existing session into packsDir (name `kayit-<sessionId>` — same rule as auto-pack), updates index, returns `{ok, packName}`; 409 if that file is the actively-recording session; 404 unknown file; body validated (plain object, string file, no path separators).
-- [ ] Step 3: Failing tests for `DELETE /api/sessions/<file>` and `DELETE /api/packs/<name>`: happy path removes from disk (pack dir removed recursively, index.json entry removed); active recording's file → 409; name with `/`, `\`, `..`, `%2e%2e`, null byte → 400/404 and NOTHING outside the target dir is touched (test with a canary file); deleting a pack that a session references leaves the session intact and library shows packName null afterwards.
-- [ ] Step 4: Implement all three surfaces with the same path-safety helper style as `sessionFilePath` (single shared helper `safeChildPath(dir, name)`). Deletion uses `fs.rmSync(p, { recursive: true, force: false })` for packs and `unlinkSync` for sessions.
-- [ ] Step 5: `npm test` green; commit `feat(server): library API — list sessions/packs, pack on demand, safe delete`.
+- [x] Step 1: Failing tests for `GET /api/library`: returns `{ sessions:[{file, bytes, mtimeMs, sessionId, label, complete, events, participants, packName}], packs:[{name, sessionId, label, lanes, events, strokes, bytes}] }`. Session metadata comes from reading ONLY the first line (header) and the last ~8 KB (end record if present) of each JSONL — never the whole file (they reach 700 MB). `packName` joined via packs index sessionId.
+- [x] Step 2: Failing tests for `POST /api/pack` body `{file}`: packs an existing session into packsDir (name `kayit-<sessionId>` — same rule as auto-pack), updates index, returns `{ok, packName}`; 409 if that file is the actively-recording session; 404 unknown file; body validated (plain object, string file, no path separators).
+- [x] Step 3: Failing tests for `DELETE /api/sessions/<file>` and `DELETE /api/packs/<name>`: happy path removes from disk (pack dir removed recursively, index.json entry removed); active recording's file → 409; name with `/`, `\`, `..`, `%2e%2e`, null byte → 400/404 and NOTHING outside the target dir is touched (test with a canary file); deleting a pack that a session references leaves the session intact and library shows packName null afterwards.
+- [x] Step 4: Implement all three surfaces with the same path-safety helper style as `sessionFilePath` (single shared helper `safeChildPath(dir, name)`). Deletion uses `fs.rmSync(p, { recursive: true, force: false })` for packs and `unlinkSync` for sessions.
+- [x] Step 5: `npm test` green; commit `feat(server): library API — list sessions/packs, pack on demand, safe delete`.
 
 ### Task 5: Take labels + start body
 
