@@ -842,7 +842,7 @@ git commit -m "feat: file source replaying raw SSE captures"
 - Create: `src/recorder.js`, `src/cli.js`
 - Test: `test/recorder.test.js`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```js
 // test/recorder.test.js
@@ -886,11 +886,11 @@ test('same file + same seed produce identical event lines (determinism)', async 
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npm test` — Expected: FAIL, cannot find `../src/recorder.js`.
 
-- [ ] **Step 3: Implement recorder**
+- [x] **Step 3: Implement recorder**
 
 ```js
 // src/recorder.js
@@ -939,11 +939,11 @@ export async function recordFromSource(source, {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `npm test` — Expected: all pass.
 
-- [ ] **Step 5: Implement CLI**
+- [x] **Step 5: Implement CLI**
 
 ```js
 // src/cli.js
@@ -1010,12 +1010,12 @@ export async function* liveSource() {
 }
 ```
 
-- [ ] **Step 6: Manual verify record-file on the full real capture**
+- [x] **Step 6: Manual verify record-file on the full real capture**
 
 Run: `node src/cli.js record-file captures/2026-08-28-loadgen384-45s.sse.raw`
 Expected: JSON summary with `participants: 384` and `stats.received: 263986`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/recorder.js src/cli.js src/env.js src/sources/live-source.js test/recorder.test.js
