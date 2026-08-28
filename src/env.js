@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 export function loadEnv(path = new URL('../.env', import.meta.url).pathname) {
   const env = { ...process.env };
   try {
-    for (const line of readFileSync(path, 'utf8').split('\n')) {
+    for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
       const m = line.match(/^([A-Z_]+)=(.*)$/);
       if (m && env[m[1]] === undefined) env[m[1]] = m[2];
     }

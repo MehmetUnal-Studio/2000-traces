@@ -1,5 +1,6 @@
 .env
 node_modules/
+tmp-repro/
 sessions/
 captures/*.raw
 .DS_Store
