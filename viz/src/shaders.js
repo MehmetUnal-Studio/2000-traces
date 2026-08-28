@@ -15,6 +15,7 @@ export const DISC_VERTEX = /* glsl */ `
   uniform float uReplaying;   // 1 while the record is still being written
   uniform float uSelLane;     // -1 none, else isolated lane
   uniform float uPointScale;  // device-pixels per world unit
+  uniform float uLaneBoost;   // exposure lift for sparse sessions
   uniform vec3 uLineColors[10];
 
   varying float vAlpha;
@@ -33,7 +34,7 @@ export const DISC_VERTEX = /* glsl */ `
 
     // exposure: dense overview stays engraved-grey, zooming in reveals grains;
     // an isolated lane is exempt — its full trace must always read clearly
-    float gain = clamp(uPointScale / 700.0, 0.55, 3.5);
+    float gain = clamp(uPointScale / 700.0, 0.55, 3.5) * uLaneBoost;
     float baseAlpha = (aKind > 0.5 ? 0.34 : 0.05) * gain * others;
     float selAlpha = aKind > 0.5 ? 0.95 : 0.55;
     vAlpha = visible * fresh * mix(baseAlpha, selAlpha, isSel);

@@ -25,6 +25,8 @@ export function buildDisc(pack, layout) {
     uReplaying: { value: 0 },
     uSelLane: { value: -1 },
     uPointScale: { value: 400 },
+    // sparser sessions get wider lanes and less pixel overlap; lift exposure
+    uLaneBoost: { value: Math.min(2.5, Math.pow(2000 / manifest.laneCount, 0.6)) },
     uLineColors: { value: lineColors() },
   };
 
