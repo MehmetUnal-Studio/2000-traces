@@ -1388,7 +1388,7 @@ git commit -m "feat: local control server and operator panel"
 
 Ground truth measured independently from the capture before this project existed: 263,986 events, 384 unique participants across all 26 zones, type counts `{0: 3418, 1: 5078, 2: 5046, 3: 250444}`, per-participant timestamps strictly monotonic.
 
-- [ ] **Step 1: Write the test**
+- [x] **Step 1: Write the test**
 
 ```js
 // test/acceptance.test.js
@@ -1439,11 +1439,11 @@ test('full 384-participant capture: counts, identity, monotonicity, round-trip',
 });
 ```
 
-- [ ] **Step 2: Run the test**
+- [x] **Step 2: Run the test**
 
 Run: `npm test` — Expected: all pass (this one takes a few seconds; 264k events through the full pipeline).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add test/acceptance.test.js
