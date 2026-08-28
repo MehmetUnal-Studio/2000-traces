@@ -7,7 +7,11 @@ import { createTransport } from './transport.js';
 import { createHud, updateZoneLabels } from './hud.js';
 import { exportStill } from './export-still.js';
 
-const PACKS = ['live-2000', 'loadgen-384'];
+const FALLBACK_PACKS = ['live-2000', 'loadgen-384'];
+const PACKS = await fetch('/packs/index.json')
+  .then((r) => (r.ok ? r.json() : null))
+  .then((d) => (d?.packs?.length ? d.packs.map((p) => p.name) : FALLBACK_PACKS))
+  .catch(() => FALLBACK_PACKS);
 
 const canvas = document.getElementById('c');
 const view = createScene(canvas);

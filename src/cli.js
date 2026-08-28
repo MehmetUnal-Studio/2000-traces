@@ -21,7 +21,7 @@ if (cmd === 'record-file') {
   console.log(JSON.stringify({ outPath: summary.outPath, participants: summary.participants, events: summary.events, stats: summary.stats }, null, 2));
 } else if (cmd === 'record-live') {
   const env = loadEnv();
-  const src = liveSource({ url: env.CS_EVENTS_URL, auth: env.CS_EVENTS_AUTH });
+  const src = liveSource({ url: env.CS_EVENTS_URL, auth: env.CS_EVENTS_AUTH, token: env.CS_EVENTS_TOKEN });
   console.error(`recording ${durationSec}s from ${env.CS_EVENTS_URL} -> ${outPath}`);
   const summary = await recordFromSource(src, { ...opts, source: env.CS_EVENTS_URL, stopAfterMs: durationSec * 1000 });
   console.log(JSON.stringify({ outPath: summary.outPath, participants: summary.participants, events: summary.events, stats: summary.stats }, null, 2));

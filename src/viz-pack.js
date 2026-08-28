@@ -6,9 +6,9 @@
 //   strokes.bin   — one 16-byte record per noteOn..noteOff pair on a lane
 // Lanes are ordered zone -> seat (the brief's venue ordering with the data we
 // have); the same session file always produces byte-identical packs.
-import { createReadStream, mkdirSync, writeFileSync } from 'node:fs';
+import { createReadStream, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
-import { join } from 'node:path';
+import { join, dirname, basename } from 'node:path';
 
 export const EVENT_RECORD_BYTES = 12;
 export const STROKE_RECORD_BYTES = 16;
@@ -122,6 +122,17 @@ export async function packSession(inputPath, outDir) {
   writeFileSync(join(outDir, 'events.bin'), events);
   writeFileSync(join(outDir, 'strokes.bin'), strokeBuf);
   writeFileSync(join(outDir, 'manifest.json'), JSON.stringify(manifest));
+
+  // keep a directory-level index so the viewer discovers packs dynamically
+  const indexPath = join(dirname(outDir), 'index.json');
+  let index = { packs: [] };
+  try { index = JSON.parse(readFileSync(indexPath, 'utf8')); } catch { /* first pack */ }
+  const entry = {
+    name: basename(outDir), sessionId: meta.sessionId,
+    lanes: participants.length, events: eventCount, strokes: strokes.length,
+  };
+  index.packs = [entry, ...index.packs.filter((p) => p.name !== entry.name)];
+  writeFileSync(indexPath, JSON.stringify(index, null, 1));
   return manifest;
 }
 

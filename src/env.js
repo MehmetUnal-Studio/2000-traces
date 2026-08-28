@@ -10,8 +10,8 @@ export function loadEnv(path = new URL('../.env', import.meta.url).pathname) {
       if (m && env[m[1]] === undefined) env[m[1]] = m[2];
     }
   } catch { /* .env optional when real env vars are set */ }
-  if (!env.CS_EVENTS_URL || !env.CS_EVENTS_AUTH) {
-    throw new Error('CS_EVENTS_URL and CS_EVENTS_AUTH must be set (in .env or environment)');
+  if (!env.CS_EVENTS_URL || (!env.CS_EVENTS_AUTH && !env.CS_EVENTS_TOKEN)) {
+    throw new Error('CS_EVENTS_URL and CS_EVENTS_AUTH (basic) or CS_EVENTS_TOKEN (bearer) must be set');
   }
   return env;
 }

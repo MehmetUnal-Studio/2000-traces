@@ -4,11 +4,12 @@ import { createSseParser } from '../sse-parser.js';
 // Async generator over the authenticated live SSE feed. Reconnects with
 // backoff; yields { raw, arrivalMs }. Snapshot frames are yielded as-is —
 // the session/adapter skips them.
-export async function* liveSource({ url, auth, maxRetries = Infinity, retryDelayMs = 500, maxRetryDelayMs = 4000, signal = null }) {
+export async function* liveSource({ url, auth, token, maxRetries = Infinity, retryDelayMs = 500, maxRetryDelayMs = 4000, signal = null }) {
   let retries = 0;
   let delay = retryDelayMs;
   const headers = { Accept: 'text/event-stream' };
-  if (auth) headers.Authorization = 'Basic ' + Buffer.from(auth).toString('base64');
+  if (token) headers.Authorization = 'Bearer ' + token;
+  else if (auth) headers.Authorization = 'Basic ' + Buffer.from(auth).toString('base64');
 
   while (true) {
     const queue = [];

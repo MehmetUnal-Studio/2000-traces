@@ -44,3 +44,20 @@ test('reconnects after a dropped connection', async () => {
   assert.equal(hits() >= 2, true);
   assert.equal(got.includes(3), true);
 });
+
+test('sends bearer token when token is given', async () => {
+  let sawAuth = null;
+  const server = createServer((req, res) => {
+    sawAuth = req.headers.authorization;
+    res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+    res.write('data: {"t":3,"z":0,"s":1,"ts":10}\n\n');
+    res.end();
+  });
+  await new Promise((r) => server.listen(0, r));
+  const url = `http://127.0.0.1:${server.address().port}/api/events`;
+  const got = [];
+  for await (const { raw } of liveSource({ url, token: 'tok-123', maxRetries: 0 })) got.push(raw.t);
+  server.close();
+  assert.equal(sawAuth, 'Bearer tok-123');
+  assert.deepEqual(got, [3]);
+});

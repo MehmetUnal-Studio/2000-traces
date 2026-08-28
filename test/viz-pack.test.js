@@ -117,3 +117,16 @@ test('strokes pair noteOn with noteOff on the same lane+finger', async () => {
     assert.equal(t1 <= manifest.durationMs, true);
   }
 });
+
+test('packing updates the directory-level index.json', async () => {
+  const { mkdtempSync: mkd, readFileSync: rf } = await import('node:fs');
+  const { join: j } = await import('node:path');
+  const { tmpdir: td } = await import('node:os');
+  const dir = mkd(j(td(), 'traces-pack-'));
+  const { out } = await makeSession(dir);
+  await packSession(out, j(dir, 'packs', 'a'));
+  await packSession(out, j(dir, 'packs', 'b'));
+  const idx = JSON.parse(rf(j(dir, 'packs', 'index.json'), 'utf8'));
+  assert.deepEqual(idx.packs.map((p) => p.name), ['b', 'a']);
+  assert.equal(idx.packs[0].sessionId, 'pack-test');
+});

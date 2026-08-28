@@ -102,7 +102,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const sessionsDir = new URL('../sessions/', import.meta.url).pathname;
   const srv = createControlServer({
     sessionsDir,
-    sourceFactory: (signal) => liveSource({ url: env.CS_EVENTS_URL, auth: env.CS_EVENTS_AUTH, signal }),
+    sourceFactory: (signal) => liveSource({ url: env.CS_EVENTS_URL, auth: env.CS_EVENTS_AUTH, token: env.CS_EVENTS_TOKEN, signal }),
   });
   await srv.listen(Number(process.env.PANEL_PORT ?? 8787));
   console.log(`2000 TRACES recorder panel: http://127.0.0.1:${srv.port()}/`);
