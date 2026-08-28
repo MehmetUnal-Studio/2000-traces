@@ -758,7 +758,7 @@ git commit -m "feat: JSONL session export/import with partial-file support"
 - Create: `src/sources/file-source.js`
 - Test: `test/file-source.test.js` (uses `captures/fixture-small.sse.txt` — 3,000 real `data: ` lines)
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```js
 // test/file-source.test.js
@@ -793,11 +793,11 @@ test('skips unparseable lines without throwing', async () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npm test` — Expected: FAIL, cannot find `../src/sources/file-source.js`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```js
 // src/sources/file-source.js
@@ -823,11 +823,11 @@ export async function* fileSource(path) {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `npm test` — Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/sources/file-source.js test/file-source.test.js captures/fixture-small.sse.txt
