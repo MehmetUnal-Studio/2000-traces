@@ -1,0 +1,13 @@
+{
+  "name": "2000-traces",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "record:file": "node src/cli.js record-file",
+    "record:live": "node src/cli.js record-live",
+    "panel": "node src/server.js"
+  }
+}
