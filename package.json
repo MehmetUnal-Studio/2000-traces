@@ -10,7 +10,9 @@
     "test": "node --test test/*.test.js",
     "record:file": "node src/cli.js record-file",
     "record:live": "node src/cli.js record-live",
-    "panel": "node src/server.js"
+    "panel": "node src/server.js",
+    "viz": "vite --config viz/vite.config.js",
+    "viz:pack": "node src/viz-pack.js"
   },
   "dependencies": {
     "three": "^0.185.1",
