@@ -24,10 +24,10 @@
 
 **Files:** `src/sources/live-source.js`, `src/env.js`, tests in `test/live-source.test.js`, `test/env.test.js` (new).
 
-- [ ] Step 1: Add failing tests: (a) mock SSE server that sends 2 events then `res.end()` cleanly — `liveSource` with `maxRetries: 2` must reconnect and yield events from the second connection; (b) abort during backoff sleep resolves promptly (< ~200 ms, not after maxRetryDelayMs); (c) HTTP 401 twice → generator throws an error mentioning auth/401 instead of retrying forever (design: 401/403 responses do NOT count as transient — retry once, then throw); (d) `loadEnv` parses a CRLF-formatted .env file.
-- [ ] Step 2: Implement: clean end-of-stream returns only when `signal?.aborted` or `maxRetries === 0`; otherwise it goes through the same retry/backoff path as errors. Reset `retries` (not just delay) after a successful connect that yielded at least one chunk. Backoff sleep listens to `signal` ('abort' event clears the timer). 401/403: retry once then throw `Error('SSE auth failed (HTTP 401): check CS_EVENTS_AUTH / CS_EVENTS_TOKEN')`. When BOTH auth and token are provided, `console.warn` once that token wins. env.js: strip `\r` per line.
-- [ ] Step 3: `npm test` green; commit `fix(sources): reconnect on clean close, abortable backoff, auth failure surfacing, CRLF env`.
-- [ ] Step 4: Add `tmp-repro/` to `.gitignore`.
+- [x] Step 1: Add failing tests: (a) mock SSE server that sends 2 events then `res.end()` cleanly — `liveSource` with `maxRetries: 2` must reconnect and yield events from the second connection; (b) abort during backoff sleep resolves promptly (< ~200 ms, not after maxRetryDelayMs); (c) HTTP 401 twice → generator throws an error mentioning auth/401 instead of retrying forever (design: 401/403 responses do NOT count as transient — retry once, then throw); (d) `loadEnv` parses a CRLF-formatted .env file.
+- [x] Step 2: Implement: clean end-of-stream returns only when `signal?.aborted` or `maxRetries === 0`; otherwise it goes through the same retry/backoff path as errors. Reset `retries` (not just delay) after a successful connect that yielded at least one chunk. Backoff sleep listens to `signal` ('abort' event clears the timer). 401/403: retry once then throw `Error('SSE auth failed (HTTP 401): check CS_EVENTS_AUTH / CS_EVENTS_TOKEN')`. When BOTH auth and token are provided, `console.warn` once that token wins. env.js: strip `\r` per line.
+- [x] Step 3: `npm test` green; commit `fix(sources): reconnect on clean close, abortable backoff, auth failure surfacing, CRLF env`.
+- [x] Step 4: Add `tmp-repro/` to `.gitignore`.
 
 ### Task 2: Session/recorder/packer data integrity
 
