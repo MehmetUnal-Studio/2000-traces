@@ -477,7 +477,7 @@ Semantics locked here:
 - Duplicates: an event identical to the participant's immediately previous stored event in (`eventType`, `serverTimestampMs`, `finger`, `line`, `u`, `v`) is counted `duplicates` and not stored.
 - Wall-clock duration enforcement lives in the recorder (Task 8), not here — sessions ingest whatever they are given while RECORDING.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```js
 // test/session.test.js
@@ -550,11 +550,11 @@ test('snapshot frames are silently skipped (not counted malformed)', () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npm test` — Expected: FAIL, cannot find `../src/session.js`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```js
 // src/session.js
@@ -628,11 +628,11 @@ export function createSession({ sessionId, visualSeed, durationMs = 90000, now =
 export const SESSION_STATES = ORDER;
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `npm test` — Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/session.js test/session.test.js
