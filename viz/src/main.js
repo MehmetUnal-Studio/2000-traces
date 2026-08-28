@@ -264,7 +264,9 @@ function frame(now) {
 switchPack(PACKS[0]).then(() => requestAnimationFrame(frame));
 
 // debug hook for driving the app programmatically
+import * as THREE from 'three';
 window.__traces = {
+  THREE,
   select, view, startRecording, stopRecording,
   get current() { return current; },
   get live() { return live; },
