@@ -1,9 +1,13 @@
 // src/server.js
 import { createServer } from 'node:http';
-import { readFileSync, readdirSync, statSync, createReadStream, existsSync } from 'node:fs';
+import {
+  readFileSync, writeFileSync, readdirSync, statSync, createReadStream, existsSync,
+  unlinkSync, rmSync, renameSync,
+} from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { recordFromSource } from './recorder.js';
 import { packSession, TYPE_CODES } from './viz-pack.js';
+import { listLibrary, readSessionMeta } from './library.js';
 import { loadEnv } from './env.js';
 import { liveSource } from './sources/live-source.js';
 
@@ -25,6 +29,32 @@ export function broadcastFrame(clients, frame, maxBuffer = LIVE_CLIENT_MAX_BUFFE
     res.write(frame);
   }
 }
+
+// Path names arriving over HTTP are attacker-controlled (curl and
+// DNS-rebinding pages bypass browser `..` normalization). Only a plain file
+// name that resolves inside `dir` is safe; anything else returns null.
+function safeChildPath(dir, name) {
+  if (typeof name !== 'string' || !name || name === '.' || name === '..') return null;
+  if (name.includes('/') || name.includes('\\') || name.includes('\0')) return null;
+  const f = resolve(dir, name);
+  return f.startsWith(resolve(dir) + sep) ? f : null;
+}
+
+// Percent-decoded suffix of `url` after `prefix`, or null on malformed encoding.
+function decodeName(url, prefix) {
+  try { return decodeURIComponent(url.split('?')[0].slice(prefix.length)); }
+  catch { return null; }
+}
+
+const readBody = (req, limit = 1 << 20) => new Promise((resolvBody, reject) => {
+  let buf = '';
+  req.on('data', (d) => {
+    buf += d;
+    if (buf.length > limit) { reject(new Error('body too large')); req.destroy(); }
+  });
+  req.on('end', () => resolvBody(buf));
+  req.on('error', reject);
+});
 
 export function createControlServer({
   sessionsDir, sourceFactory, durationMs = 90000,
@@ -78,8 +108,43 @@ export function createControlServer({
     durationMs,
   });
 
+  // The take being recorded (or packed right after) must never be packed over
+  // or deleted from under the recorder — the 90 s show artifact is sacred.
+  const busySessionFile = () => {
+    const sid = current?.sessionId ?? finalizing?.sessionId ?? null;
+    return sid === null ? null : `${sid}.jsonl`;
+  };
+
   const handlers = {
     'GET /api/status': (req, res) => json(res, status()),
+    'GET /api/library': (req, res) => json(res, listLibrary({ sessionsDir, packsDir })),
+    'POST /api/pack': async (req, res) => {
+      let body;
+      try { body = JSON.parse(await readBody(req)); }
+      catch { return json(res, { error: 'invalid JSON body' }, 400); }
+      if (typeof body !== 'object' || body === null || Array.isArray(body) || typeof body.file !== 'string') {
+        return json(res, { error: 'body must be {file}' }, 400);
+      }
+      const f = safeChildPath(sessionsDir, body.file);
+      if (!f || !body.file.endsWith('.jsonl')) return json(res, { error: 'invalid file name' }, 400);
+      if (!packsDir) return json(res, { error: 'packs dir not configured' }, 409);
+      if (body.file === busySessionFile()) return json(res, { error: 'session is still recording' }, 409);
+      if (!existsSync(f)) return json(res, { error: 'no such session' }, 404);
+      // same naming rule as auto-pack, from the header's authoritative sessionId
+      let sid = null;
+      try { sid = readSessionMeta(f).sessionId; } catch { /* unreadable file */ }
+      if (sid === null) return json(res, { error: 'not a session file (no header)' }, 400);
+      const packName = sid.replace(/^session-/, 'kayit-');
+      const outDir = safeChildPath(packsDir, packName);
+      if (!outDir) return json(res, { error: 'invalid sessionId in header' }, 400);
+      try {
+        await packSession(f, outDir);
+        json(res, { ok: true, packName });
+      } catch (err) {
+        console.error('pack failed:', err);
+        json(res, { error: err?.message ?? String(err) }, 500);
+      }
+    },
     'POST /api/arm': (req, res) => {
       if (phase === 'ARMED') {
         // second arm = disarm: an accidental arm must not force a junk take
@@ -199,17 +264,51 @@ export function createControlServer({
     res.end(JSON.stringify(obj));
   }
 
-  // The raw request path is attacker-controlled (curl and DNS-rebinding pages
-  // bypass browser `..` normalization), so only serve plain file names that
-  // resolve inside sessionsDir. Returns the safe absolute path, or null.
   function sessionFilePath(url) {
-    let name;
-    try { name = decodeURIComponent(url.split('?')[0].slice('/sessions/'.length)); }
-    catch { return null; } // malformed percent-encoding
-    if (!name || name === '.' || name === '..') return null;
-    if (name.includes('/') || name.includes('\\') || name.includes('\0')) return null;
-    const f = resolve(sessionsDir, name);
-    return f.startsWith(resolve(sessionsDir) + sep) ? f : null;
+    const name = decodeName(url, '/sessions/');
+    return name === null ? null : safeChildPath(sessionsDir, name);
+  }
+
+  function deleteSession(req, res) {
+    const name = decodeName(req.url, '/api/sessions/');
+    const f = name === null ? null : safeChildPath(sessionsDir, name);
+    if (!f) return json(res, { error: 'invalid name' }, 400);
+    if (name === busySessionFile()) return json(res, { error: 'session is still recording' }, 409);
+    try { unlinkSync(f); } catch (err) {
+      if (err?.code === 'ENOENT') return json(res, { error: 'no such session' }, 404);
+      return json(res, { error: err?.message ?? String(err) }, 500);
+    }
+    json(res, { ok: true });
+  }
+
+  function deletePack(req, res) {
+    if (!packsDir) return json(res, { error: 'packs dir not configured' }, 404);
+    const name = decodeName(req.url, '/api/packs/');
+    const p = name === null ? null : safeChildPath(packsDir, name);
+    if (!p) return json(res, { error: 'invalid name' }, 400);
+    try {
+      // a pack is a directory (index.json and stray files are not deletable here)
+      if (!statSync(p).isDirectory()) return json(res, { error: 'no such pack' }, 404);
+      rmSync(p, { recursive: true, force: false });
+    } catch (err) {
+      if (err?.code === 'ENOENT') return json(res, { error: 'no such pack' }, 404);
+      return json(res, { error: err?.message ?? String(err) }, 500);
+    }
+    removePackFromIndex(name);
+    json(res, { ok: true });
+  }
+
+  // Drop one entry from index.json, atomically (temp file + rename) so readers
+  // never observe a torn index. A missing/corrupt index self-heals on the next
+  // packSession run, so there is nothing to rewrite here.
+  function removePackFromIndex(name) {
+    const indexPath = join(packsDir, 'index.json');
+    let index;
+    try { index = JSON.parse(readFileSync(indexPath, 'utf8')); } catch { return; }
+    const packs = (index.packs ?? []).filter((e) => e?.name !== name);
+    const tmpPath = `${indexPath}.${process.pid}.tmp`;
+    writeFileSync(tmpPath, JSON.stringify({ ...index, packs }, null, 1));
+    renameSync(tmpPath, indexPath);
   }
 
   return {
@@ -217,11 +316,17 @@ export function createControlServer({
       flushTimer = setInterval(flushLive, LIVE_FLUSH_MS);
       server = createServer((req, res) => {
         if (req.method === 'OPTIONS') {
-          res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST' });
+          res.writeHead(204, {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, DELETE',
+            'Access-Control-Allow-Headers': 'Content-Type',
+          });
           return res.end();
         }
         const key = `${req.method} ${req.url.split('?')[0]}`;
         if (handlers[key]) return handlers[key](req, res);
+        if (req.method === 'DELETE' && req.url.startsWith('/api/sessions/')) return deleteSession(req, res);
+        if (req.method === 'DELETE' && req.url.startsWith('/api/packs/')) return deletePack(req, res);
         if (req.method === 'GET' && req.url.startsWith('/sessions/')) {
           const f = sessionFilePath(req.url);
           if (f && existsSync(f)) { res.writeHead(200, { 'Content-Type': 'application/x-ndjson', 'Access-Control-Allow-Origin': '*' }); return createReadStream(f).pipe(res); }
