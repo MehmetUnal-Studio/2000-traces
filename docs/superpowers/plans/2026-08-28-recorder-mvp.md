@@ -1030,7 +1030,7 @@ git commit -m "feat: streaming recorder with JSONL output and record-file CLI"
 - Modify: `src/sources/live-source.js` (replace placeholder)
 - Test: `test/live-source.test.js` (spins a local mock SSE server)
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```js
 // test/live-source.test.js
@@ -1083,11 +1083,11 @@ test('reconnects after a dropped connection', async () => {
 
 Note: the first test asserts only `t:1` arrives in `got` — write the source so snapshot frames are yielded too (the session already skips them); if that makes the assertion fail, filter `raw.type === 'snapshot'` in the source and keep the assertion. Decide in implementation, keep the test green and honest.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npm test` — Expected: FAIL (placeholder throws).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```js
 // src/sources/live-source.js
@@ -1132,11 +1132,11 @@ export async function* liveSource({ url, auth, maxRetries = Infinity, retryDelay
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `npm test` — Expected: all pass. Adjust the first test's expectations to whatever filtering decision was made (see note in Step 1), keeping assertions truthful.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/sources/live-source.js test/live-source.test.js
