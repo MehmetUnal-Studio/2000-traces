@@ -156,7 +156,7 @@ git init && git add -A && git commit -m "chore: scaffold 2000-traces recorder pr
 - Create: `src/sse-parser.js`
 - Test: `test/sse-parser.test.js`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```js
 // test/sse-parser.test.js
@@ -195,11 +195,11 @@ test('handles CRLF line endings', () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npm test` — Expected: FAIL, cannot find `../src/sse-parser.js`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```js
 // src/sse-parser.js
@@ -225,11 +225,11 @@ export function createSseParser(onData) {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `npm test` — Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/sse-parser.js test/sse-parser.test.js
