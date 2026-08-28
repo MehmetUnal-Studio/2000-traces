@@ -35,10 +35,10 @@
 
 **Files:** `src/session.js`, `src/cli.js`, `src/jsonl.js`, `src/viz-pack.js`; tests in `test/session.test.js`, `test/jsonl.test.js`, `test/viz-pack.test.js`.
 
-- [ ] Step 1: Failing tests: (a) session ingest of an event whose ts precedes the anchor → rejected, counted in a new `early` stat, stats invariant updated; (b) importSession and packSession over a file whose last line is `{"kind":"event","tru` → parse succeeds, torn line skipped, counted/reported; (c) a lane with strokes open on fingers 0 AND 1 receiving `disconnect` → both strokes closed at the disconnect tMs; (d) index.json write is via temp-file + rename (assert no `.tmp`残 left and content correct after two sequential packs).
-- [ ] Step 2: Implement each. For (a) keep the change minimal: `if (tMs < 0) { stats.early += 1; return { accepted:false, reason:'before-anchor' } }` and add `early: 0` to stats init + endLine summary. For (c): on disconnect, close ALL open strokes of that lane (iterate the `open` map), not just `finger ?? 0`.
-- [ ] Step 3: cli.js record-live: create an AbortController, pass `signal` into liveSource, `setTimeout(abort, durationMs + 5000)` cleared on completion — mirrors server.js's killer.
-- [ ] Step 4: `npm test` green; commit `fix(data): early-event guard, torn-line tolerance, multi-finger disconnect, atomic index, cli wall-clock stop`.
+- [x] Step 1: Failing tests: (a) session ingest of an event whose ts precedes the anchor → rejected, counted in a new `early` stat, stats invariant updated; (b) importSession and packSession over a file whose last line is `{"kind":"event","tru` → parse succeeds, torn line skipped, counted/reported; (c) a lane with strokes open on fingers 0 AND 1 receiving `disconnect` → both strokes closed at the disconnect tMs; (d) index.json write is via temp-file + rename (assert no `.tmp`残 left and content correct after two sequential packs).
+- [x] Step 2: Implement each. For (a) keep the change minimal: `if (tMs < 0) { stats.early += 1; return { accepted:false, reason:'before-anchor' } }` and add `early: 0` to stats init + endLine summary. For (c): on disconnect, close ALL open strokes of that lane (iterate the `open` map), not just `finger ?? 0`.
+- [x] Step 3: cli.js record-live: create an AbortController, pass `signal` into liveSource, `setTimeout(abort, durationMs + 5000)` cleared on completion — mirrors server.js's killer. (Landed early in `a569fee` with its own test in `test/cli.test.js`; verified green here.)
+- [x] Step 4: `npm test` green; commit `fix(data): early-event guard, torn-line tolerance, multi-finger disconnect, atomic index, cli wall-clock stop`.
 
 ### Task 3: Control server correctness
 
