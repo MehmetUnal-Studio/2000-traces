@@ -244,7 +244,7 @@ git commit -m "feat: incremental SSE frame parser"
 - Create: `src/adapter.js`
 - Test: `test/adapter.test.js`
 
-- [ ] **Step 1: Write the failing tests** (payloads below are real lines from the live capture)
+- [x] **Step 1: Write the failing tests** (payloads below are real lines from the live capture)
 
 ```js
 // test/adapter.test.js
@@ -301,11 +301,11 @@ test('rejects snapshot, malformed, unknown type, out-of-range identity', () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npm test` — Expected: FAIL, cannot find `../src/adapter.js`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```js
 // src/adapter.js
@@ -349,11 +349,11 @@ export function normalizeEvent(raw) {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `npm test` — Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/adapter.js test/adapter.test.js
