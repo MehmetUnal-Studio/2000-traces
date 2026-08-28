@@ -3,11 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test": "node --test test/*.test.js",
     "record:file": "node src/cli.js record-file",
     "record:live": "node src/cli.js record-live",
     "panel": "node src/server.js"
+  },
+  "dependencies": {
+    "three": "^0.185.1",
+    "vite": "^8.2.2"
   }
 }
