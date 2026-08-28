@@ -91,3 +91,64 @@ test('control server binds loopback only', async (t) => {
     'server accepted a non-127.0.0.1 connection: it is not bound to loopback IPv4 only',
   );
 });
+
+test('live SSE hub: hello, roster, batches, completion with auto-pack', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'traces-live-'));
+  const packs = join(dir, 'packs');
+  const capture = join(dir, 'cap.raw');
+  writeFileSync(capture, [
+    'data: {"type":"snapshot","zones":{"0":{"1":{"lastSeen":1}},"2":{"7":{"lastSeen":1}}}}',
+    'data: {"t":1,"z":0,"s":1,"l":3,"f":0,"uu":0.5,"vv":0.5,"ts":1000}',
+    'data: {"t":3,"z":2,"s":7,"f":0,"uu":0.2,"vv":0.8,"ts":1050}',
+    'data: {"t":2,"z":0,"s":1,"l":3,"f":0,"ts":1500}',
+  ].map((l) => l + '\n\n').join(''));
+
+  const srv = createControlServer({
+    sessionsDir: dir, packsDir: packs, autoPack: true,
+    sourceFactory: () => fileSource(capture),
+  });
+  await srv.listen(0);
+  const base = `http://127.0.0.1:${srv.port()}`;
+
+  const frames = [];
+  const sse = await fetch(`${base}/api/live`);
+  assert.equal(sse.headers.get('access-control-allow-origin'), '*');
+  const reader = sse.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  const pump = (async () => {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n\n')) !== -1) {
+        const line = buf.slice(0, i); buf = buf.slice(i + 2);
+        if (line.startsWith('data: ')) frames.push(JSON.parse(line.slice(6)));
+      }
+      if (frames.some((f) => f.kind === 'state' && f.state === 'COMPLETE')) break;
+    }
+  })();
+
+  await fetch(`${base}/api/arm`, { method: 'POST' });
+  await fetch(`${base}/api/start`, { method: 'POST' });
+  await Promise.race([pump, new Promise((r) => setTimeout(r, 5000))]);
+  reader.cancel().catch(() => {});
+
+  assert.equal(frames[0].kind, 'hello');
+  const roster = frames.find((f) => f.kind === 'roster');
+  assert.deepEqual(roster.roster, [{ z: 'A', s: 1 }, { z: 'C', s: 7 }]);
+  const batches = frames.filter((f) => f.kind === 'batch').flatMap((f) => f.events);
+  assert.equal(batches.length, 3);
+  assert.deepEqual(batches[0], { z: 'A', s: 1, t: 0, k: 1, f: 0, l: 3, u: 0.5, v: 0.5 });
+  const complete = frames.find((f) => f.kind === 'state' && f.state === 'COMPLETE');
+  assert.equal(complete.participants, 2);
+  assert.equal(complete.packName.startsWith('kayit-'), true);
+  const { existsSync: ex } = await import('node:fs');
+  assert.equal(ex(join(packs, complete.packName, 'manifest.json')), true);
+  assert.equal(ex(join(packs, 'index.json')), true);
+  const st = await (await fetch(`${base}/api/status`)).json();
+  assert.equal(st.state, 'COMPLETE');
+  assert.equal(st.packName, complete.packName);
+  await srv.close();
+});

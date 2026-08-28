@@ -33,6 +33,9 @@
     border-radius: 6px; padding: 5px 10px; font: inherit; cursor: pointer;
   }
   button:hover, select:hover { border-color: var(--accent); }
+  button:disabled, select:disabled { opacity: .35; pointer-events: none; }
+  button.rec { color: #ff5470; border-color: #3a1b22; }
+  button.rec.on { background: #2a1218; border-color: #ff5470; color: #ff8296; }
   #scrub { width: 260px; padding: 0; accent-color: var(--accent); }
   .mono { font-variant-numeric: tabular-nums; min-width: 52px; display: inline-block; }
   #zoneLabels { position: fixed; inset: 0; pointer-events: none; }

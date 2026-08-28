@@ -13,7 +13,7 @@ import { headerLine, eventLine, endLine } from './jsonl.js';
 export async function recordFromSource(source, {
   outPath, sessionId, visualSeed, source: sourceLabel = 'unknown',
   durationMs = 90000, stopAfterMs = null, now = Date.now, onProgress = null,
-  onSession = null,
+  onSession = null, onEvent = null, onSnapshot = null,
 } = {}) {
   mkdirSync(dirname(outPath), { recursive: true });
   const session = createSession({ sessionId, visualSeed, durationMs, now });
@@ -43,6 +43,9 @@ export async function recordFromSource(source, {
         const rec = session.store.all()[r.seq];
         const p = writeLine(eventLine(rec, raw));
         if (p) await p; // backpressure: recording must not balloon memory
+        if (onEvent) onEvent(rec); // live re-broadcast tap; disk write stays authoritative
+      } else if (r.reason === 'snapshot' && onSnapshot) {
+        onSnapshot(raw); // upstream roster: who is connected right now
       }
       if (onProgress && session.stats().received % 10000 === 0) onProgress(session.stats());
     }

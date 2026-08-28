@@ -2,13 +2,13 @@
 // Minimal operator chrome around the artwork. Show mode ('H') hides all of it.
 const fmt = (ms) => `${Math.floor(ms / 1000)}.${Math.floor((ms % 1000) / 100)}s`;
 
-export function createHud({ packs, onPack, onPlayPause, onSeek, onSpeed, onFinal, onRestart, onExport, onFit, onDeselect }) {
+export function createHud({ packs, onPack, onPlayPause, onSeek, onSpeed, onFinal, onRestart, onExport, onFit, onDeselect, onRecord }) {
   const el = document.createElement('div');
   el.id = 'hud';
   el.innerHTML = `
     <div class="panel top">
       <div class="brand">2000 TRACES <span class="dim">— collective record</span></div>
-      <select id="pack">${packs.map((p) => `<option value="${p}">${p}</option>`).join('')}</select>
+      <select id="pack"></select>
       <div id="stats" class="dim"></div>
     </div>
     <div class="panel seat" id="seatPanel" hidden>
@@ -17,6 +17,7 @@ export function createHud({ packs, onPack, onPlayPause, onSeek, onSpeed, onFinal
       <button id="deselect">kapat (esc)</button>
     </div>
     <div class="panel transport">
+      <button id="rec" class="rec" title="canlı akıştan 90 sn kaydet">● KAYIT</button>
       <button id="play">▶</button>
       <button id="restart" title="baştan oynat">⟲</button>
       <input id="scrub" type="range" min="0" max="90000" value="90000" step="50">
@@ -44,6 +45,7 @@ export function createHud({ packs, onPack, onPlayPause, onSeek, onSpeed, onFinal
   $('fit').onclick = onFit;
   $('export').onclick = onExport;
   $('deselect').onclick = onDeselect;
+  $('rec').onclick = onRecord;
 
   let hidden = false;
   window.addEventListener('keydown', (e) => {
@@ -54,6 +56,12 @@ export function createHud({ packs, onPack, onPlayPause, onSeek, onSpeed, onFinal
   labelLayer.id = 'zoneLabels';
   document.body.appendChild(labelLayer);
 
+  const setPacks = (names, selected) => {
+    $('pack').innerHTML = names.map((p) => `<option value="${p}">${p}</option>`).join('');
+    if (selected) $('pack').value = selected;
+  };
+  setPacks(packs);
+
   return {
     setStats(text) { $('stats').textContent = text; },
     setDuration(ms) { $('scrub').max = String(ms); },
@@ -63,6 +71,16 @@ export function createHud({ packs, onPack, onPlayPause, onSeek, onSpeed, onFinal
       $('play').textContent = playing ? '⏸' : '▶';
     },
     setPack(name) { $('pack').value = name; },
+    setPacks,
+    setRecState(label, on) {
+      $('rec').textContent = label;
+      $('rec').classList.toggle('on', !!on);
+    },
+    setLiveMode(on) {
+      for (const id of ['play', 'restart', 'scrub', 'speed', 'final', 'export', 'pack']) {
+        $(id).disabled = on;
+      }
+    },
     showSeat(info) {
       $('seatPanel').hidden = !info;
       if (info) { $('selPid').textContent = info.title; $('selMeta').innerHTML = info.meta; }
