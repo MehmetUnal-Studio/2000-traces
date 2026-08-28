@@ -368,7 +368,7 @@ git commit -m "feat: raw event adapter with validation and identity mapping"
 - Create: `src/store.js`
 - Test: `test/store.test.js`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```js
 // test/store.test.js
@@ -410,11 +410,11 @@ test('participant metadata accumulates', () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npm test` — Expected: FAIL, cannot find `../src/store.js`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```js
 // src/store.js
@@ -452,11 +452,11 @@ export function createStore() {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `npm test` — Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/store.js test/store.test.js
