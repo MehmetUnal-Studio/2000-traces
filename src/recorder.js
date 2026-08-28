@@ -13,6 +13,7 @@ import { headerLine, eventLine, endLine } from './jsonl.js';
 export async function recordFromSource(source, {
   outPath, sessionId, visualSeed, source: sourceLabel = 'unknown',
   durationMs = 90000, stopAfterMs = null, now = Date.now, onProgress = null,
+  onSession = null,
 } = {}) {
   mkdirSync(dirname(outPath), { recursive: true });
   const session = createSession({ sessionId, visualSeed, durationMs, now });
@@ -29,6 +30,7 @@ export async function recordFromSource(source, {
 
   session.arm();
   session.start();
+  if (onSession) onSession(session); // hands the live session to callers (control server status)
   try {
     await writeLine(headerLine(session.meta(), sourceLabel));
 

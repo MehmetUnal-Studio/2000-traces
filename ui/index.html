@@ -1,0 +1,63 @@
+<!-- ui/index.html -->
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>2000 TRACES — Kayıt Paneli</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { background:#0b0e14; color:#cdd6e4; font:14px/1.5 "SF Mono",Menlo,monospace; margin:0; padding:24px; max-width:720px; }
+  h1 { font-size:16px; color:#fff; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; margin:16px 0; }
+  .card { background:#11151f; border:1px solid #1e2635; border-radius:8px; padding:12px 16px; min-width:120px; flex:1; }
+  .card b { display:block; font-size:11px; color:#5c6773; letter-spacing:.08em; margin-bottom:6px; }
+  .big { font-size:20px; color:#fff; }
+  button { background:#11151f; border:1px solid #1e2635; color:#cdd6e4; border-radius:6px; padding:8px 16px; font:inherit; cursor:pointer; }
+  button:hover { border-color:#7aa2f7; }
+  button:disabled { opacity:.4; cursor:default; }
+  #state.RECORDING { color:#ff5470; }
+  #state.COMPLETE { color:#3ddc84; }
+  a { color:#7aa2f7; }
+  ul { padding-left:20px; }
+</style>
+</head>
+<body>
+<h1>2000 TRACES — KAYIT PANELİ</h1>
+<div class="row">
+  <div class="card"><b>DURUM</b><span class="big" id="state">…</span></div>
+  <div class="card"><b>KATILIMCI</b><span class="big" id="participants">0</span></div>
+  <div class="card"><b>KAYITLI OLAY</b><span class="big" id="stored">0</span></div>
+  <div class="card"><b>HATALI / GEÇ / TEKRAR</b><span class="big" id="anoms">0/0/0</span></div>
+</div>
+<div class="row">
+  <button id="arm">ARM</button>
+  <button id="start">BAŞLAT (90 sn)</button>
+  <button id="stop">ERKEN DURDUR</button>
+</div>
+<h1 style="font-size:13px">OTURUMLAR</h1>
+<ul id="sessions"></ul>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const post = (p) => fetch(p, { method: 'POST' });
+  $('arm').onclick = () => post('/api/arm');
+  $('start').onclick = () => post('/api/start');
+  $('stop').onclick = () => post('/api/stop');
+  async function tick() {
+    try {
+      const st = await (await fetch('/api/status')).json();
+      $('state').textContent = st.state;
+      $('state').className = st.state;
+      $('participants').textContent = st.participants ?? 0;
+      $('stored').textContent = st.stats?.stored ?? 0;
+      $('anoms').textContent = `${st.stats?.malformed ?? 0}/${st.stats?.late ?? 0}/${st.stats?.duplicates ?? 0}`;
+      $('arm').disabled = !(st.state === 'IDLE' || st.state === 'COMPLETE');
+      $('start').disabled = st.state !== 'ARMED';
+      $('stop').disabled = st.state !== 'RECORDING';
+      const ss = await (await fetch('/api/sessions')).json();
+      $('sessions').innerHTML = ss.map((s) => `<li><a href="/sessions/${s.file}">${s.file}</a> — ${(s.bytes / 1e6).toFixed(1)} MB</li>`).join('');
+    } catch { $('state').textContent = 'BAĞLANTI YOK'; }
+  }
+  setInterval(tick, 1000); tick();
+</script>
+</body>
+</html>

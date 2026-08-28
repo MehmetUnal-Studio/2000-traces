@@ -46,6 +46,23 @@ test('same file + same seed produce identical event lines (determinism)', async 
   assert.deepEqual(strip(a), strip(b));
 });
 
+test('onSession fires with the live session once recording has started', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'traces-'));
+  const out = join(dir, 'session.jsonl');
+  let seen = null;
+  let stateAtCallback = null;
+  const record = recordFromSource(fileSource(FIXTURE), {
+    outPath: out, sessionId: 'hook-test', visualSeed: 3, source: 't',
+    onSession: (s) => { seen = s; stateAtCallback = s.state(); },
+  });
+  // the callback fires synchronously, before the first await inside recordFromSource
+  assert.ok(seen, 'onSession was called');
+  assert.equal(stateAtCallback, 'RECORDING');
+  const summary = await record;
+  assert.equal(seen.state(), 'COMPLETE');
+  assert.equal(seen.stats().stored, summary.stats.stored);
+});
+
 test('a throwing source rejects but still flushes and closes the partial file', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'traces-'));
   const out = join(dir, 'partial.jsonl');
