@@ -9,13 +9,32 @@ import { liveSource } from './sources/live-source.js';
 
 const LIVE_FLUSH_MS = 40;
 
+// One stalled viewer (lid closed, wifi drop without FIN — 'close' fires only
+// minutes later on retransmit timeout) must not buffer the whole show in
+// server memory: past the high-water mark the client is dropped. A live view
+// can simply rejoin; it does not need history.
+export const LIVE_CLIENT_MAX_BUFFER = 4 * 1024 * 1024;
+
+export function broadcastFrame(clients, frame, maxBuffer = LIVE_CLIENT_MAX_BUFFER) {
+  for (const res of clients) {
+    if ((res.writableLength ?? 0) > maxBuffer) {
+      clients.delete(res);
+      res.destroy?.();
+      continue;
+    }
+    res.write(frame);
+  }
+}
+
 export function createControlServer({
   sessionsDir, sourceFactory, durationMs = 90000,
   packsDir = null, autoPack = false,
 }) {
   let phase = 'IDLE'; // mirrors session states between runs
   let current = null; // { sessionId, controller, session, killer }
-  let lastSummary = null;
+  let lastSummary = null; // light summary only — never the live session object
+  let finalizing = null; // { sessionId, stats, participants } while packSession runs
+  let lastError = null; // { message, sessionId, at } from a failed take, until the next start
   let server = null;
 
   // --- live re-broadcast hub (viewer draws while the recorder records) -----
@@ -24,10 +43,7 @@ export function createControlServer({
   let pendingBatch = [];
   let flushTimer = null;
 
-  const broadcast = (obj) => {
-    const frame = `data: ${JSON.stringify(obj)}\n\n`;
-    for (const res of liveClients) res.write(frame);
-  };
+  const broadcast = (obj) => broadcastFrame(liveClients, `data: ${JSON.stringify(obj)}\n\n`);
   const flushLive = () => {
     if (!pendingBatch.length || !liveClients.size) { pendingBatch = pendingBatch.length > 50000 ? [] : pendingBatch; return; }
     const events = pendingBatch;
@@ -49,18 +65,28 @@ export function createControlServer({
     return roster;
   };
 
+  // During FINALIZING `current` is already null: the `finalizing` snapshot
+  // keeps status reporting THIS session, not the previous take's lastSummary.
   const status = () => ({
     state: current?.session?.state?.() ?? phase,
-    stats: current?.session?.stats?.() ?? lastSummary?.stats ?? null,
-    participants: current?.session?.store?.participantCount?.() ?? lastSummary?.participants ?? 0,
-    sessionId: current?.sessionId ?? lastSummary?.sessionId ?? null,
-    packName: lastSummary?.packName ?? null,
+    stats: current?.session?.stats?.() ?? finalizing?.stats ?? lastSummary?.stats ?? null,
+    participants: current?.session?.store?.participantCount?.() ?? finalizing?.participants ?? lastSummary?.participants ?? 0,
+    sessionId: current?.sessionId ?? finalizing?.sessionId ?? lastSummary?.sessionId ?? null,
+    packName: finalizing ? null : lastSummary?.packName ?? null,
+    packError: finalizing ? null : lastSummary?.packError ?? null,
+    lastError,
     durationMs,
   });
 
   const handlers = {
     'GET /api/status': (req, res) => json(res, status()),
     'POST /api/arm': (req, res) => {
+      if (phase === 'ARMED') {
+        // second arm = disarm: an accidental arm must not force a junk take
+        phase = 'IDLE';
+        broadcast({ kind: 'state', state: 'IDLE' });
+        return json(res, status());
+      }
       if (phase !== 'IDLE' && phase !== 'COMPLETE') return json(res, { error: `cannot arm from ${phase}` }, 409);
       phase = 'ARMED';
       broadcast({ kind: 'state', state: 'ARMED' });
@@ -68,6 +94,11 @@ export function createControlServer({
     },
     'POST /api/start': (req, res) => {
       if (phase !== 'ARMED') return json(res, { error: `cannot start from ${phase}` }, 409);
+      // fresh session boundary: nothing from a previous take may leak into
+      // this take's hello/roster or its first live batch
+      latestRoster = null;
+      pendingBatch = [];
+      lastError = null;
       const sessionId = `session-${new Date().toISOString().replace(/[:.]/g, '-')}`;
       const outPath = join(sessionsDir, `${sessionId}.jsonl`);
       const controller = new AbortController();
@@ -92,30 +123,54 @@ export function createControlServer({
       record
         .then(async (summary) => {
           clearTimeout(current?.killer);
+          finalizing = { sessionId, stats: summary.stats, participants: summary.participants };
           current = null;
           phase = 'FINALIZING';
           flushLive();
+          pendingBatch = []; // undelivered frames die with their session (live has no history)
+          latestRoster = null;
           let packName = null;
+          let packError = null;
           // an empty session (stream never produced events) has nothing to pack
           if (autoPack && packsDir && summary.participants > 0) {
             packName = sessionId.replace(/^session-/, 'kayit-');
-            await packSession(outPath, join(packsDir, packName));
+            try {
+              await packSession(outPath, join(packsDir, packName));
+            } catch (err) {
+              // the take on disk is fine and packing is retryable — a pack
+              // failure must never report a successful recording as failed
+              packError = err?.message ?? String(err);
+              packName = null;
+              console.error('auto-pack failed:', err);
+            }
           }
-          lastSummary = { ...summary, sessionId, packName };
+          // drop the live session object: keeping it pins the whole in-memory
+          // event store (~600 MB per full show) for as long as the server idles
+          const { session: _session, ...persistable } = summary;
+          lastSummary = { ...persistable, sessionId, packName, packError };
+          finalizing = null;
           phase = 'COMPLETE';
-          broadcast({ kind: 'state', state: 'COMPLETE', sessionId, packName, stats: summary.stats, participants: summary.participants });
+          broadcast({ kind: 'state', state: 'COMPLETE', sessionId, packName, packError, stats: summary.stats, participants: summary.participants });
         })
-        .catch(() => {
+        .catch((err) => {
+          console.error('recording failed:', err);
           clearTimeout(current?.killer);
           current = null;
+          finalizing = null;
           phase = 'IDLE';
-          broadcast({ kind: 'state', state: 'IDLE', error: 'recording failed' });
+          lastError = { message: err?.message ?? 'recording failed', sessionId, at: Date.now() };
+          // a dead take must not resurface the previous take's numbers
+          lastSummary = null;
+          pendingBatch = [];
+          latestRoster = null;
+          broadcast({ kind: 'state', state: 'IDLE', error: lastError.message });
         });
       phase = 'RECORDING';
       json(res, { ok: true, sessionId });
     },
     'POST /api/stop': (req, res) => {
-      if (!current) return json(res, { error: 'not recording' }, 409);
+      // phase-accurate refusal: 'not recording' during FINALIZING read as a lost take
+      if (!current) return json(res, { error: `cannot stop from ${phase}` }, 409);
       current.controller.abort();
       json(res, { ok: true });
     },

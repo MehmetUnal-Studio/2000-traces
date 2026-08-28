@@ -29,6 +29,9 @@
   <div class="card"><b>KAYITLI OLAY</b><span class="big" id="stored">0</span></div>
   <div class="card"><b>HATALI / GEÇ / TEKRAR</b><span class="big" id="anoms">0/0/0</span></div>
 </div>
+<div class="row" id="errRow" style="display:none">
+  <div class="card" style="border-color:#ff5470"><b style="color:#ff5470">HATA</b><span id="err" style="color:#ff5470"></span></div>
+</div>
 <div class="row">
   <button id="arm">ARM</button>
   <button id="start">BAŞLAT (90 sn)</button>
@@ -50,7 +53,12 @@
       $('participants').textContent = st.participants ?? 0;
       $('stored').textContent = st.stats?.stored ?? 0;
       $('anoms').textContent = `${st.stats?.malformed ?? 0}/${st.stats?.late ?? 0}/${st.stats?.duplicates ?? 0}`;
-      $('arm').disabled = !(st.state === 'IDLE' || st.state === 'COMPLETE');
+      const err = st.lastError ? `kayıt hatası: ${st.lastError.message}`
+        : st.packError ? `paketleme hatası: ${st.packError} — jsonl diskte sağlam` : null;
+      $('errRow').style.display = err ? '' : 'none';
+      $('err').textContent = err ?? '';
+      $('arm').textContent = st.state === 'ARMED' ? 'DISARM' : 'ARM';
+      $('arm').disabled = !(st.state === 'IDLE' || st.state === 'COMPLETE' || st.state === 'ARMED');
       $('start').disabled = st.state !== 'ARMED';
       $('stop').disabled = st.state !== 'RECORDING';
       const ss = await (await fetch('/api/sessions')).json();
