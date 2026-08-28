@@ -1,7 +1,7 @@
 // test/acceptance.test.js
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { recordFromSource } from '../src/recorder.js';
@@ -10,8 +10,9 @@ import { importSession } from '../src/jsonl.js';
 
 const CAPTURE = new URL('../captures/2026-08-28-loadgen384-45s.sse.raw', import.meta.url).pathname;
 
-test('full 384-participant capture: counts, identity, monotonicity, round-trip', { skip: !existsSync(CAPTURE) }, async () => {
+test('full 384-participant capture: counts, identity, monotonicity, round-trip', { skip: !existsSync(CAPTURE) }, async (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'traces-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
   const out = join(dir, 'full.jsonl');
   const summary = await recordFromSource(fileSource(CAPTURE), {
     outPath: out, sessionId: 'acceptance', visualSeed: 1, source: 'file:capture',
