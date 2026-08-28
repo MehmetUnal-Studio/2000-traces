@@ -21,10 +21,20 @@ if (cmd === 'record-file') {
   console.log(JSON.stringify({ outPath: summary.outPath, participants: summary.participants, events: summary.events, stats: summary.stats }, null, 2));
 } else if (cmd === 'record-live') {
   const env = loadEnv();
-  const src = liveSource({ url: env.CS_EVENTS_URL, auth: env.CS_EVENTS_AUTH, token: env.CS_EVENTS_TOKEN });
+  // Wall-clock killer, mirroring server.js: clean close reconnects by design,
+  // and stopAfterMs only fires per yielded event — without this abort a hub
+  // that closes and stays down would reconnect-loop forever, and the
+  // operator's Ctrl-C would lose the JSONL end line and the summary.
+  const controller = new AbortController();
+  const killer = setTimeout(() => controller.abort(), durationSec * 1000 + 5000);
+  const src = liveSource({ url: env.CS_EVENTS_URL, auth: env.CS_EVENTS_AUTH, token: env.CS_EVENTS_TOKEN, signal: controller.signal });
   console.error(`recording ${durationSec}s from ${env.CS_EVENTS_URL} -> ${outPath}`);
-  const summary = await recordFromSource(src, { ...opts, source: env.CS_EVENTS_URL, stopAfterMs: durationSec * 1000 });
-  console.log(JSON.stringify({ outPath: summary.outPath, participants: summary.participants, events: summary.events, stats: summary.stats }, null, 2));
+  try {
+    const summary = await recordFromSource(src, { ...opts, source: env.CS_EVENTS_URL, stopAfterMs: durationSec * 1000 });
+    console.log(JSON.stringify({ outPath: summary.outPath, participants: summary.participants, events: summary.events, stats: summary.stats }, null, 2));
+  } finally {
+    clearTimeout(killer);
+  }
 } else {
   console.error('usage: node src/cli.js record-file <capture.raw> | record-live');
   process.exit(1);
