@@ -1465,7 +1465,7 @@ git commit -m "test: acceptance run over the full 384-participant live capture"
 | 8 | Deterministic same-file replay | Task 8 determinism test (visual determinism belongs to the next plan) |
 | 9 | Raw + normalized export | Task 6 event lines carry both |
 | 11 | Recording reliable under load | Streaming writes + backpressure in Task 8 |
-| 12 | 2,000-person simulator test | **Deferred**: requires deploying the new capture-calibrated loadgen or a long cloud run — scheduled as the first task after this plan |
+| 12 | 2,000-person simulator test | **Done 2026-08-28**: live 90 s recording with loadgen clients:2000 — 2,000 participants, 2,725,816 events (~30.3k/s), 0 malformed/late/duplicates, 0 per-participant ts regressions, 717 MB JSONL verified (header/events/end consistent) |
 
 Criteria 6 and 10 (circular artwork, still export) are the visual milestone — next plan.
 
