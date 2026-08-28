@@ -8,7 +8,7 @@ import { liveSource } from './sources/live-source.js';
 
 export function createControlServer({ sessionsDir, sourceFactory, durationMs = 90000 }) {
   let phase = 'IDLE'; // mirrors session states between runs
-  let current = null; // { sessionId, controller, promise, session }
+  let current = null; // { sessionId, controller, session }
   let lastSummary = null;
   let server = null;
 
@@ -34,12 +34,11 @@ export function createControlServer({ sessionsDir, sourceFactory, durationMs = 9
       const controller = new AbortController();
       // current must exist before recordFromSource runs: onSession fires
       // synchronously, before the record promise is returned.
-      current = { sessionId, controller, promise: null, session: null };
+      current = { sessionId, controller, session: null };
       const record = recordFromSource(sourceFactory(controller.signal), {
         outPath, sessionId, source: 'live', durationMs, stopAfterMs: durationMs,
         onSession: (s) => { current.session = s; },
       });
-      current.promise = record;
       record.then((summary) => { lastSummary = { ...summary, sessionId }; current = null; phase = 'COMPLETE'; })
             .catch(() => { current = null; phase = 'IDLE'; });
       phase = 'RECORDING';

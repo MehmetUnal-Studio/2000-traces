@@ -6,7 +6,9 @@ export function createSseParser(onData) {
   let buf = '';
   return {
     feed(chunk) {
-      buf += chunk.replace(/\r\n/g, '\n');
+      // Normalize on the buffer, not the chunk, so a CRLF split across two
+      // feed() calls still collapses; the pending '\r' waits for its '\n'.
+      buf = (buf + chunk).replace(/\r\n/g, '\n');
       let idx;
       while ((idx = buf.indexOf('\n\n')) !== -1) {
         const frame = buf.slice(0, idx);

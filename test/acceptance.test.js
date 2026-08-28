@@ -28,7 +28,7 @@ test('full 384-participant capture: counts, identity, monotonicity, round-trip',
 
   // Criterion 5: a seat's complete trace is isolable and internally ordered
   const store = summary.session.store;
-  for (const [pid, lane] of store.participants()) {
+  for (const pid of store.participants().keys()) {
     const evs = store.eventsOf(pid);
     assert.equal(evs.length > 0, true, `${pid} has a trace`);
     for (let i = 1; i < evs.length; i++) {

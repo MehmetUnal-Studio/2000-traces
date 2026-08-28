@@ -32,3 +32,12 @@ test('handles CRLF line endings', () => {
   p.feed('data: {"t":2}\r\n\r\n');
   assert.deepEqual(out, ['{"t":2}']);
 });
+
+test('handles CRLF split across chunks', () => {
+  const out = [];
+  const p = createSseParser((d) => out.push(d));
+  p.feed('data: {"t":9}\r');
+  p.feed('\n\r');
+  p.feed('\n');
+  assert.deepEqual(out, ['{"t":9}']);
+});

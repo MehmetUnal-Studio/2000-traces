@@ -2,7 +2,7 @@
 import { normalizeEvent } from './adapter.js';
 import { createStore } from './store.js';
 
-const ORDER = ['IDLE', 'ARMED', 'RECORDING', 'FINALIZING', 'COMPLETE'];
+// States: IDLE -> ARMED -> RECORDING -> FINALIZING -> COMPLETE
 
 export function createSession({ sessionId, visualSeed, durationMs = 90000, now = Date.now } = {}) {
   if (!sessionId) sessionId = `session-${now()}`;
@@ -65,5 +65,3 @@ export function createSession({ sessionId, visualSeed, durationMs = 90000, now =
     },
   };
 }
-
-export const SESSION_STATES = ORDER;
