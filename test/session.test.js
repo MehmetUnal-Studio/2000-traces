@@ -1,7 +1,7 @@
 // test/session.test.js
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createSession } from '../src/session.js';
+import { createSession, sanitizeLabel } from '../src/session.js';
 
 const NOTE = (z, s, ts, extra = {}) => ({ t: 1, z, s, l: 1, f: 0, uu: 0.5, vv: 0.5, ts, ...extra });
 
@@ -19,6 +19,24 @@ test('state machine transitions', () => {
   assert.equal(done.sessionId, 'test-1');
   assert.equal(done.visualSeed, 7);
   assert.throws(() => ss.start());
+});
+
+test('meta() carries the sanitized label, default empty', () => {
+  const noLabel = createSession({ visualSeed: 1, sessionId: 'no-label' });
+  assert.equal(noLabel.meta().label, '');
+
+  const ss = createSession({ visualSeed: 1, sessionId: 'labeled', label: 'prova 1' });
+  assert.equal(ss.meta().label, 'prova 1');
+});
+
+test('sanitizeLabel strips to [\\p{L}\\p{N} _-], caps at 40 chars, allows empty', () => {
+  assert.equal(sanitizeLabel('prova 1'), 'prova 1');
+  assert.equal(sanitizeLabel(''), '');
+  assert.equal(sanitizeLabel(undefined), '');
+  assert.equal(sanitizeLabel('<script>x'), 'scriptx');
+  assert.equal(sanitizeLabel('İstanbul_gösteri-1'), 'İstanbul_gösteri-1'); // unicode letters kept
+  const long = 'a'.repeat(200);
+  assert.equal(sanitizeLabel(long), 'a'.repeat(40));
 });
 
 test('ingest anchors tMs to first stored event and stores in arrival order', () => {

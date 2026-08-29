@@ -132,6 +132,7 @@ export async function packSession(inputPath, outDir) {
     sessionId: meta.sessionId,
     durationMs,
     visualSeed: meta.visualSeed,
+    label: meta.label ?? null,
     laneCount: participants.length,
     eventCount,
     strokeCount: strokes.length,
@@ -153,7 +154,7 @@ export async function packSession(inputPath, outDir) {
   const packsRoot = dirname(outDir);
   const indexPath = join(packsRoot, 'index.json');
   const entryFor = (name, m) => ({
-    name, sessionId: m.sessionId,
+    name, sessionId: m.sessionId, label: m.label ?? null,
     lanes: m.laneCount, events: m.eventCount, strokes: m.strokeCount,
   });
   const entry = entryFor(basename(outDir), manifest);

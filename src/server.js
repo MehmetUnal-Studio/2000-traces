@@ -6,6 +6,7 @@ import {
 } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { recordFromSource } from './recorder.js';
+import { sanitizeLabel } from './session.js';
 import { packSession, TYPE_CODES } from './viz-pack.js';
 import { listLibrary, readSessionMeta } from './library.js';
 import { loadEnv } from './env.js';
@@ -157,8 +158,20 @@ export function createControlServer({
       broadcast({ kind: 'state', state: 'ARMED' });
       json(res, status());
     },
-    'POST /api/start': (req, res) => {
+    'POST /api/start': async (req, res) => {
       if (phase !== 'ARMED') return json(res, { error: `cannot start from ${phase}` }, 409);
+      // an empty body is fine (no label offered); malformed JSON is a client error
+      let label = '';
+      const raw = await readBody(req);
+      if (raw.trim()) {
+        let body;
+        try { body = JSON.parse(raw); }
+        catch { return json(res, { error: 'invalid JSON body' }, 400); }
+        if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+          return json(res, { error: 'body must be {label}' }, 400);
+        }
+        if (body.label !== undefined) label = sanitizeLabel(body.label);
+      }
       // fresh session boundary: nothing from a previous take may leak into
       // this take's hello/roster or its first live batch
       latestRoster = null;
@@ -169,12 +182,12 @@ export function createControlServer({
       const controller = new AbortController();
       // current must exist before recordFromSource runs: onSession fires
       // synchronously, before the record promise is returned.
-      current = { sessionId, controller, session: null, killer: null };
+      current = { sessionId, controller, session: null, killer: null, label };
       const record = recordFromSource(sourceFactory(controller.signal), {
-        outPath, sessionId, source: 'live', durationMs, stopAfterMs: durationMs,
+        outPath, sessionId, source: 'live', label, durationMs, stopAfterMs: durationMs,
         onSession: (s) => {
           current.session = s;
-          broadcast({ kind: 'state', state: 'RECORDING', sessionId, visualSeed: s.meta().visualSeed });
+          broadcast({ kind: 'state', state: 'RECORDING', sessionId, visualSeed: s.meta().visualSeed, label });
         },
         onEvent: (rec) => { pendingBatch.push(compact(rec)); },
         onSnapshot: (raw) => {
@@ -215,7 +228,7 @@ export function createControlServer({
           lastSummary = { ...persistable, sessionId, packName, packError };
           finalizing = null;
           phase = 'COMPLETE';
-          broadcast({ kind: 'state', state: 'COMPLETE', sessionId, packName, packError, stats: summary.stats, participants: summary.participants });
+          broadcast({ kind: 'state', state: 'COMPLETE', sessionId, packName, packError, stats: summary.stats, participants: summary.participants, label });
         })
         .catch((err) => {
           console.error('recording failed:', err);
@@ -231,7 +244,7 @@ export function createControlServer({
           broadcast({ kind: 'state', state: 'IDLE', error: lastError.message });
         });
       phase = 'RECORDING';
-      json(res, { ok: true, sessionId });
+      json(res, { ok: true, sessionId, label });
     },
     'POST /api/stop': (req, res) => {
       // phase-accurate refusal: 'not recording' during FINALIZING read as a lost take
@@ -252,6 +265,7 @@ export function createControlServer({
         kind: 'hello', state: status().state, durationMs,
         sessionId: current?.sessionId ?? null,
         visualSeed: current?.session?.meta?.().visualSeed ?? null,
+        label: current?.label ?? null,
         roster: latestRoster,
       })}\n\n`);
       liveClients.add(res);

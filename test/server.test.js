@@ -37,6 +37,59 @@ test('arm/start/stop lifecycle over HTTP', async (t) => {
   assert.equal(sessions.length, 1);
 });
 
+test('POST /api/start accepts a label, sanitized end-to-end into the library', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'traces-'));
+  const srv = createControlServer({ sessionsDir: dir, sourceFactory: () => fileSource(FIXTURE) });
+  await srv.listen(0);
+  t.after(() => srv.close());
+  const base = `http://127.0.0.1:${srv.port()}`;
+
+  await fetch(`${base}/api/arm`, { method: 'POST' });
+  const startRes = await (await fetch(`${base}/api/start`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'prova 1' }),
+  })).json();
+  assert.equal(startRes.label, 'prova 1');
+
+  let st = await (await fetch(`${base}/api/status`)).json();
+  for (let i = 0; i < 100 && st.state !== 'COMPLETE'; i++) {
+    await new Promise((r) => setTimeout(r, 50));
+    st = await (await fetch(`${base}/api/status`)).json();
+  }
+  assert.equal(st.state, 'COMPLETE');
+
+  const lib = await (await fetch(`${base}/api/library`)).json();
+  assert.equal(lib.sessions[0].label, 'prova 1');
+});
+
+test('POST /api/start sanitizes a hostile label (strips tags, caps at 40 chars)', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'traces-'));
+  const srv = createControlServer({ sessionsDir: dir, sourceFactory: () => fileSource(FIXTURE) });
+  await srv.listen(0);
+  t.after(() => srv.close());
+  const base = `http://127.0.0.1:${srv.port()}`;
+
+  await fetch(`${base}/api/arm`, { method: 'POST' });
+  const hostile = `<script>x`.repeat(30); // > 40 chars after stripping
+  const startRes = await (await fetch(`${base}/api/start`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: hostile }),
+  })).json();
+  assert.equal(startRes.label.length, 40);
+  assert.equal(/^[\p{L}\p{N} _-]*$/u.test(startRes.label), true);
+});
+
+test('POST /api/start with no body still works (label empty)', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'traces-'));
+  const srv = createControlServer({ sessionsDir: dir, sourceFactory: () => fileSource(FIXTURE) });
+  await srv.listen(0);
+  t.after(() => srv.close());
+  const base = `http://127.0.0.1:${srv.port()}`;
+
+  await fetch(`${base}/api/arm`, { method: 'POST' });
+  const startRes = await (await fetch(`${base}/api/start`, { method: 'POST' })).json();
+  assert.equal(startRes.ok, true);
+  assert.equal(startRes.label, '');
+});
+
 test('/sessions/ download rejects path traversal outside sessionsDir', async (t) => {
   const parent = mkdtempSync(join(tmpdir(), 'traces-'));
   const dir = join(parent, 'sessions');

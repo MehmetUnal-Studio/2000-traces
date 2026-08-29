@@ -11,12 +11,12 @@ import { headerLine, eventLine, endLine } from './jsonl.js';
 // durationMs wall-clock stop: pass stopAfterMs to cut a live source; a file
 // source just runs to completion (its data is already bounded).
 export async function recordFromSource(source, {
-  outPath, sessionId, visualSeed, source: sourceLabel = 'unknown',
+  outPath, sessionId, visualSeed, source: sourceLabel = 'unknown', label = '',
   durationMs = 90000, stopAfterMs = null, now = Date.now, onProgress = null,
   onSession = null, onEvent = null, onSnapshot = null,
 } = {}) {
   mkdirSync(dirname(outPath), { recursive: true });
-  const session = createSession({ sessionId, visualSeed, durationMs, now });
+  const session = createSession({ sessionId, visualSeed, durationMs, now, label });
   const out = createWriteStream(outPath, { flags: 'w' });
   // Persistent listener: an async write error (ENOSPC, EACCES) arriving while
   // we are not awaiting the stream must reject this promise, not crash the

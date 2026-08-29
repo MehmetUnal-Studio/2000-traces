@@ -10,13 +10,25 @@ import { packSession, EVENT_RECORD_BYTES, STROKE_RECORD_BYTES, TYPE_CODES } from
 
 const FIXTURE = new URL('../captures/fixture-small.sse.txt', import.meta.url).pathname;
 
-async function makeSession(dir) {
+async function makeSession(dir, opts = {}) {
   const out = join(dir, 'session.jsonl');
   const summary = await recordFromSource(fileSource(FIXTURE), {
-    outPath: out, sessionId: 'pack-test', visualSeed: 7, source: 'fixture',
+    outPath: out, sessionId: 'pack-test', visualSeed: 7, source: 'fixture', ...opts,
   });
   return { out, summary };
 }
+
+test('label rides from session header into manifest and the packs index entry', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'traces-pack-'));
+  const { out } = await makeSession(dir, { sessionId: 'pack-label', label: 'prova 1' });
+  const packDir = join(dir, 'pack');
+  const manifest = await packSession(out, packDir);
+  assert.equal(manifest.label, 'prova 1');
+
+  const index = JSON.parse(readFileSync(join(dir, 'index.json'), 'utf8'));
+  const entry = index.packs.find((p) => p.sessionId === 'pack-label');
+  assert.equal(entry.label, 'prova 1');
+});
 
 test('packs a session into manifest + events.bin + strokes.bin', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'traces-pack-'));

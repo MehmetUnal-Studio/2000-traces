@@ -4,9 +4,19 @@ import { createStore } from './store.js';
 
 // States: IDLE -> ARMED -> RECORDING -> FINALIZING -> COMPLETE
 
-export function createSession({ sessionId, visualSeed, durationMs = 90000, now = Date.now } = {}) {
+// Operator-typed free text riding into JSONL, manifests, and the library UI —
+// strip to a safe charset and cap length so a hostile/oversized label can
+// never break downstream JSON, file names, or rendering.
+const LABEL_MAX = 40;
+export function sanitizeLabel(label) {
+  if (typeof label !== 'string') return '';
+  return [...label.replace(/[^\p{L}\p{N} _-]/gu, '')].slice(0, LABEL_MAX).join('');
+}
+
+export function createSession({ sessionId, visualSeed, durationMs = 90000, now = Date.now, label = '' } = {}) {
   if (!sessionId) sessionId = `session-${now()}`;
   if (visualSeed === undefined) visualSeed = Math.floor(Math.random() * 2 ** 31);
+  const cleanLabel = sanitizeLabel(label);
   let state = 'IDLE';
   let anchorServerMs = null;
   let startedAtLocalMs = null;
@@ -26,7 +36,7 @@ export function createSession({ sessionId, visualSeed, durationMs = 90000, now =
     state: () => state,
     stats: () => ({ ...stats }),
     meta: () => ({
-      schemaVersion: 1, sessionId, durationMs, visualSeed,
+      schemaVersion: 1, sessionId, durationMs, visualSeed, label: cleanLabel,
       anchorServerMs, startedAtLocalMs, endedAtLocalMs,
     }),
     arm: () => assertState('IDLE', 'ARMED'),

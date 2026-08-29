@@ -11,6 +11,16 @@ import { normalizeEvent } from '../src/adapter.js';
 
 const FIXTURE = new URL('../captures/fixture-small.sse.txt', import.meta.url).pathname;
 
+test('label option flows through to the session header, sanitized', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'traces-'));
+  const out = join(dir, 'session.jsonl');
+  await recordFromSource(fileSource(FIXTURE), {
+    outPath: out, sessionId: 'rec-label', visualSeed: 1, source: 'test', label: '<script>x',
+  });
+  const imported = importSession(readFileSync(out, 'utf8').split('\n'));
+  assert.equal(imported.meta.label, 'scriptx');
+});
+
 test('records a file source to JSONL and finalizes', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'traces-'));
   const out = join(dir, 'session.jsonl');
