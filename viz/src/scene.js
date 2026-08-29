@@ -59,6 +59,7 @@ export function createScene(canvas) {
     camera.position.y += (dy / viewH) * 2 / camera.zoom;
   });
   canvas.addEventListener('pointerup', (e) => {
+    if (e.button !== 0) return; // mirror pointerdown: only the primary button
     const wasDragging = dragging;
     resetDrag();
     if (wasDragging && moved < 5) {

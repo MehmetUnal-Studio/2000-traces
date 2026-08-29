@@ -24,19 +24,23 @@ export function exportStill({ renderer, scene, uniforms, playheadMat = null, ses
   uniforms.uPointMax.value = size / 170;
   if (playheadMat) playheadMat.opacity = 0;
 
-  renderer.setRenderTarget(target);
-  renderer.render(scene, camera);
   const pixels = new Uint8Array(size * size * 4);
-  renderer.readRenderTargetPixels(target, 0, 0, size, size, pixels);
-  renderer.setRenderTarget(null);
-  target.dispose();
-
-  uniforms.uTime.value = prevTime;
-  uniforms.uPointScale.value = prevScale;
-  uniforms.uSelLane.value = prevSel;
-  uniforms.uReplaying.value = prevReplaying;
-  uniforms.uPointMax.value = prevMax;
-  if (playheadMat) playheadMat.opacity = prevPlayhead;
+  try {
+    renderer.setRenderTarget(target);
+    renderer.render(scene, camera);
+    renderer.readRenderTargetPixels(target, 0, 0, size, size, pixels);
+  } finally {
+    // a throw (e.g. context loss allocating the 4096² MSAA target) must never
+    // leave the live view stuck with forced export uniforms
+    renderer.setRenderTarget(null);
+    target.dispose();
+    uniforms.uTime.value = prevTime;
+    uniforms.uPointScale.value = prevScale;
+    uniforms.uSelLane.value = prevSel;
+    uniforms.uReplaying.value = prevReplaying;
+    uniforms.uPointMax.value = prevMax;
+    if (playheadMat) playheadMat.opacity = prevPlayhead;
+  }
 
   // flip vertically into a canvas
   const canvas = document.createElement('canvas');
