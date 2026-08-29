@@ -165,7 +165,7 @@ export function createHud({ packs, onPack, onPlayPause, onSeek, onSpeed, onFinal
         const del = mkBtn('SİL', null, 'danger');
         armedDelete(del, () => handlers.onDeletePack?.(p.name));
         row(
-          p.label ?? p.name,
+          p.label || p.name, // '' (etiketsiz kayıt) da isme düşmeli
           `${p.lanes} şerit · ${(p.events ?? 0).toLocaleString('tr-TR')} olay`,
           [mkBtn('AÇ', () => handlers.onOpen?.(p.name)), del],
         );
@@ -175,7 +175,7 @@ export function createHud({ packs, onPack, onPlayPause, onSeek, onSpeed, onFinal
         const del = mkBtn('SİL', null, 'danger');
         armedDelete(del, () => handlers.onDeleteSession?.(s.file));
         row(
-          s.label ?? s.file,
+          s.label || s.file,
           `${(s.bytes / 1048576).toFixed(1)} MB${s.complete ? '' : ' · yarım'}`,
           [mkBtn('PAKETLE', () => handlers.onPackSession?.(s.file)), del],
         );

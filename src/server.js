@@ -204,6 +204,7 @@ export function createControlServer({
           finalizing = { sessionId, stats: summary.stats, participants: summary.participants };
           current = null;
           phase = 'FINALIZING';
+          broadcast({ kind: 'state', state: 'FINALIZING', sessionId, label });
           flushLive();
           pendingBatch = []; // undelivered frames die with their session (live has no history)
           latestRoster = null;
