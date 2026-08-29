@@ -56,6 +56,14 @@ const hud = createHud({
 });
 
 // ------------------------------------------------------------------ library
+// Seat-panel meta reaches the DOM via innerHTML (for the <b> emphasis), and
+// zone/seat values come from outside (SSE stream, pack manifest) — escape.
+const esc = (v) => String(v).replace(/[&<>"']/g, (c) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+));
+
+let libBusy = false; // one library mutation at a time (double-click guard)
+
 function toggleLibrary() {
   const open = !hud.isLibraryOpen();
   hud.setLibraryOpen(open);
@@ -92,6 +100,8 @@ async function refreshLibrary() {
 // the packs dropdown, the panel, and — if the open pack just vanished — the
 // stage (fall back to the first remaining pack or the empty state).
 async function libraryOp(fn, { deletedPack = null } = {}) {
+  if (libBusy) return; // a second click while the first op is in flight
+  libBusy = true;
   let err = null;
   try {
     const r = await fn();
@@ -135,7 +145,7 @@ function laneInfo(lane) {
   const lifecycle = p.n - notes - moves; // noteOff/keepalive/progress/disconnect
   return {
     title: `${p.p}`,
-    meta: `zone <b>${p.z}</b> · koltuk <b>${p.s}</b> · lane ${p.l}<br>` +
+    meta: `zone <b>${esc(p.z)}</b> · koltuk <b>${esc(p.s)}</b> · lane ${esc(p.l)}<br>` +
       `${p.n} olay = ${notes} nota + ${moves} hareket + ${lifecycle} yaşam döngüsü<br>` +
       (notes + moves > 0
         ? `aktif: ${(first / 1000).toFixed(1)}s → ${(last / 1000).toFixed(1)}s`
@@ -570,7 +580,8 @@ function frame(now) {
         live.selShown = snap;
         hud.showSeat({
           title: live.sel.pid,
-          meta: `zone <b>${live.sel.z}</b> · koltuk <b>${live.sel.s}</b><br>` +
+          // z/s come straight off the SSE stream — escape before innerHTML
+          meta: `zone <b>${esc(live.sel.z)}</b> · koltuk <b>${esc(live.sel.s)}</b><br>` +
             `${count.toLocaleString('tr-TR')} olay · canlı`,
         });
       }

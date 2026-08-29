@@ -75,6 +75,11 @@ export function createHud({ packs, onPack, onPlayPause, onSeek, onSpeed, onFinal
       } else {
         clearTimeout(timer);
         timer = null;
+        // disarm immediately: if the op stalls or fails before the panel
+        // re-renders, the button must not sit live on a single click
+        btn.textContent = original;
+        btn.classList.remove('armed');
+        btn.disabled = true; // re-render replaces the row; until then, inert
         fn();
       }
     };
