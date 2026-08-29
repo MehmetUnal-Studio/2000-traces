@@ -171,6 +171,7 @@ async function startRecording() {
     cancelling: false,   // operator aborted before the take started
     rosterDerived: false, // disc layout came from the batch-derived fallback
     replayBuf: null,     // events kept for a rebuild while rosterDerived
+    pendingRoster: null, // roster broadcast that arrived before state:RECORDING
     prevPack: current?.name ?? null,
     staleSince: null, failedProbes: 0, watchdog: null,
   };
@@ -250,8 +251,13 @@ async function stopRecording() {
     return; // wait for FINALIZING/COMPLETE; the stopping flag holds the label
   }
   if (res && !res.ok && live.cancelling) {
-    // 409: take not started yet — the cancel flag stops beginTake; disarm and leave
+    // 409: take not started yet — but a RECORDING broadcast may have landed
+    // during the stop round-trip; stopRecordingConfirmed already re-sent the
+    // stop, and exiting now would drop the coming COMPLETE (pack invisible).
+    if (live.started) return;
     await disarmQuietly();
+    if (!live) return;
+    if (live.started) return; // RECORDING landed during the disarm round-trip
     exitLive(null);
     return;
   }
@@ -267,7 +273,24 @@ async function stopRecording() {
     exitLive('kayıt durdurulamadı — panele bak');
     return;
   }
-  // dead server: never brick the page
+  // fetch itself failed — could be a transient blip, not a dead server:
+  // probe status once (the watchdog's standard of proof) before tearing down
+  try {
+    const st = await (await fetch(`${RECORDER}/api/status`)).json();
+    if (!live) return;
+    if (st.state === 'FINALIZING' || st.state === 'COMPLETE') {
+      hud.setRecState('■ PAKETLENIYOR…', true);
+      return; // COMPLETE broadcast will land shortly
+    }
+    if (st.state === 'RECORDING' || st.state === 'ARMED') {
+      // server alive, stop lost in transit: retry once
+      try {
+        const r2 = await fetch(`${RECORDER}/api/stop`, { method: 'POST' });
+        if (r2.ok || live?.cancelling) return; // COMPLETE follows / cancel flag holds
+      } catch { /* fall through to teardown */ }
+    }
+  } catch { /* server really unreachable */ }
+  if (!live) return;
   exitLive('sunucu yanıt vermiyor — canlı mod kapatıldı');
 }
 
@@ -341,6 +364,12 @@ async function handleLive(msg) {
       await beginTake(msg.state);
     }
   } else if (msg.kind === 'roster') {
+    if (!live.started) {
+      // pre-RECORDING roster: the pack disc still owns the stage — hold the
+      // roster until the RECORDING confirmation clears the stage
+      live.pendingRoster = msg.roster;
+      return;
+    }
     if (live.disc && live.rosterDerived) rebuildLiveDisc(msg.roster);
     else ensureLiveDisc(msg.roster);
   } else if (msg.kind === 'batch') {
@@ -363,6 +392,10 @@ async function handleLive(msg) {
       if (live.cancelling) { stopRecordingConfirmed(); return; }
       // server confirmed the take: NOW the stage belongs to the live disc
       clearStage();
+      if (live.pendingRoster) {
+        ensureLiveDisc(live.pendingRoster);
+        live.pendingRoster = null;
+      }
       hud.setRecState('■ KAYIT', true);
     } else if (msg.state === 'FINALIZING') {
       live.stopping = true;
