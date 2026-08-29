@@ -102,27 +102,29 @@ async function refreshLibrary() {
 async function libraryOp(fn, { deletedPack = null } = {}) {
   if (libBusy) return; // a second click while the first op is in flight
   libBusy = true;
-  let err = null;
   try {
-    const r = await fn();
-    if (!r.ok) {
-      const body = await r.json().catch(() => null);
-      err = body?.error ?? `HTTP ${r.status}`;
+    let err = null;
+    try {
+      const r = await fn();
+      if (!r.ok) {
+        const body = await r.json().catch(() => null);
+        err = body?.error ?? `HTTP ${r.status}`;
+      }
+    } catch { err = 'kayıt sunucusuna ulaşılamadı'; }
+    PACKS = await fetchPacks();
+    hud.setPacks(PACKS, current?.name && PACKS.includes(current.name) ? current.name : undefined);
+    refreshLibrary();
+    if (err) { hud.setStats(`işlem başarısız — ${err}`); return; }
+    if (deletedPack && current?.name === deletedPack) {
+      if (PACKS.length) await switchPack(PACKS[0], 'açık paket silindi');
+      else {
+        clearStage();
+        hud.setPacks(PACKS);
+        hud.setStats(`açık paket silindi · ${EMPTY_LIBRARY_MSG}`);
+        hud.showSeat(null);
+      }
     }
-  } catch { err = 'kayıt sunucusuna ulaşılamadı'; }
-  PACKS = await fetchPacks();
-  hud.setPacks(PACKS, current?.name && PACKS.includes(current.name) ? current.name : undefined);
-  refreshLibrary();
-  if (err) { hud.setStats(`işlem başarısız — ${err}`); return; }
-  if (deletedPack && current?.name === deletedPack) {
-    if (PACKS.length) await switchPack(PACKS[0], 'açık paket silindi');
-    else {
-      clearStage();
-      hud.setPacks(PACKS);
-      hud.setStats(`açık paket silindi · ${EMPTY_LIBRARY_MSG}`);
-      hud.showSeat(null);
-    }
-  }
+  } finally { libBusy = false; }
 }
 
 // ---------------------------------------------------------------- pack mode
