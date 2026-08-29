@@ -43,3 +43,38 @@ export function buildLayout(manifest) {
 
   return { laneWidth, laneRadius, zoneBands, angleOf, pickLane, durationMs };
 }
+
+// Build a layout for a live roster: the connected participants in zone->seat
+// order, plus a spare band for anyone who joins after recording started.
+// laneMeta[lane] = { zone, seat, pid } for every occupied lane (spare lanes
+// fill in as laneOf assigns them; unassigned spares stay null).
+export function rosterLayout(roster, durationMs, build = buildLayout, spareLanes = 64) {
+  const sorted = [...roster].sort((a, b) => (a.z < b.z ? -1 : a.z > b.z ? 1 : a.s - b.s));
+  const zones = [];
+  sorted.forEach((p, i) => {
+    if (!zones.length || zones[zones.length - 1].zone !== p.z) {
+      zones.push({ zone: p.z, laneStart: i, laneCount: 0 });
+    }
+    zones[zones.length - 1].laneCount += 1;
+  });
+  zones.push({ zone: '·', laneStart: sorted.length, laneCount: spareLanes });
+  const laneCount = sorted.length + spareLanes;
+  const layout = build({ laneCount, zones, durationMs });
+
+  const laneMeta = new Array(laneCount).fill(null);
+  sorted.forEach((p, i) => { laneMeta[i] = { zone: p.z, seat: p.s, pid: `${p.z}${p.s}` }; });
+
+  const laneByKey = new Map(sorted.map((p, i) => [`${p.z}${p.s}`, i]));
+  let nextSpare = sorted.length;
+  const laneOf = (z, s) => {
+    const key = `${z}${s}`;
+    let lane = laneByKey.get(key);
+    if (lane !== undefined) return lane;
+    if (nextSpare >= laneCount) return null; // overflow: recorder still has it
+    lane = nextSpare++;
+    laneByKey.set(key, lane);
+    laneMeta[lane] = { zone: z, seat: s, pid: key };
+    return lane;
+  };
+  return { layout, laneOf, laneCount, laneMeta };
+}

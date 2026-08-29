@@ -70,3 +70,37 @@ test('zone labels rebuild when zone names change at equal band count', () => {
   updateZoneLabels(layer, l2, project, 1000);
   assert.deepEqual(layer.children.map((c) => c.textContent), ['A', 'B']);
 });
+
+// ---------------------------------------------------------------- rosterLayout
+import { rosterLayout } from '../viz/src/layout.js';
+
+test('rosterLayout: laneMeta carries zone/seat/pid per occupied lane', () => {
+  const roster = [{ z: 'B', s: 2 }, { z: 'A', s: 7 }, { z: 'A', s: 3 }];
+  const { laneMeta, laneOf, laneCount } = rosterLayout(roster, 90000, buildLayout, 4);
+  assert.equal(laneCount, 3 + 4);
+  // zone -> seat order
+  assert.deepEqual(laneMeta.slice(0, 3), [
+    { zone: 'A', seat: 3, pid: 'A3' },
+    { zone: 'A', seat: 7, pid: 'A7' },
+    { zone: 'B', seat: 2, pid: 'B2' },
+  ]);
+  // spare lanes start empty
+  assert.deepEqual(laneMeta.slice(3), [null, null, null, null]);
+  // existing participants resolve to their roster lanes
+  assert.equal(laneOf('A', 7), 1);
+  assert.equal(laneOf('B', 2), 2);
+});
+
+test('rosterLayout: spare-lane assignment fills laneMeta; overflow stays null', () => {
+  const roster = [{ z: 'A', s: 1 }];
+  const { laneMeta, laneOf } = rosterLayout(roster, 90000, buildLayout, 2);
+  const l1 = laneOf('C', 9);
+  assert.equal(l1, 1);
+  assert.deepEqual(laneMeta[1], { zone: 'C', seat: 9, pid: 'C9' });
+  assert.equal(laneOf('C', 9), 1); // stable on repeat lookup
+  const l2 = laneOf('D', 4);
+  assert.equal(l2, 2);
+  assert.deepEqual(laneMeta[2], { zone: 'D', seat: 4, pid: 'D4' });
+  assert.equal(laneOf('E', 5), null); // spare band full
+  assert.equal(laneMeta.length, 3);
+});

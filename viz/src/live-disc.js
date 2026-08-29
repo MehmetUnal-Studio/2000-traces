@@ -103,30 +103,6 @@ export function createLiveDisc(layout, { visualSeed = 1 } = {}) {
   };
 }
 
-// Build a layout for a live roster: the connected participants in zone->seat
-// order, plus a spare band for anyone who joins after recording started.
-export function rosterLayout(roster, durationMs, buildLayout, spareLanes = 64) {
-  const sorted = [...roster].sort((a, b) => (a.z < b.z ? -1 : a.z > b.z ? 1 : a.s - b.s));
-  const zones = [];
-  sorted.forEach((p, i) => {
-    if (!zones.length || zones[zones.length - 1].zone !== p.z) {
-      zones.push({ zone: p.z, laneStart: i, laneCount: 0 });
-    }
-    zones[zones.length - 1].laneCount += 1;
-  });
-  zones.push({ zone: '·', laneStart: sorted.length, laneCount: spareLanes });
-  const layout = buildLayout({ laneCount: sorted.length + spareLanes, zones, durationMs });
-
-  const laneByKey = new Map(sorted.map((p, i) => [`${p.z}${p.s}`, i]));
-  let nextSpare = sorted.length;
-  const laneOf = (z, s) => {
-    const key = `${z}${s}`;
-    let lane = laneByKey.get(key);
-    if (lane !== undefined) return lane;
-    if (nextSpare >= sorted.length + spareLanes) return null; // overflow: recorder still has it
-    lane = nextSpare++;
-    laneByKey.set(key, lane);
-    return lane;
-  };
-  return { layout, laneOf, laneCount: sorted.length + spareLanes };
-}
+// rosterLayout moved to layout.js (node-testable, no three import);
+// re-exported here so existing importers keep working.
+export { rosterLayout } from './layout.js';

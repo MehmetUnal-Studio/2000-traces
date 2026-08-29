@@ -27,6 +27,22 @@
   .panel.transport { bottom: 16px; left: 50%; transform: translateX(-50%); }
   .panel.seat { top: 16px; right: 16px; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 200px; }
   .panel.seat .pid { font-size: 22px; color: var(--accent); letter-spacing: .08em; }
+  .panel.library {
+    /* below the seat panel's slot so selection info and the library coexist */
+    top: 170px; right: 16px; flex-direction: column; align-items: stretch;
+    gap: 8px; width: 320px; max-height: calc(100vh - 260px); overflow-y: auto;
+  }
+  .panel.library .libHead { letter-spacing: .14em; font-weight: 700; }
+  .libRow {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; padding: 6px 0; border-top: 1px solid var(--line);
+  }
+  .libInfo { min-width: 0; }
+  .libInfo > div:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .libActs { display: flex; gap: 6px; flex-shrink: 0; }
+  .libActs button { padding: 3px 8px; font-size: 11px; }
+  button.danger { color: #ff5470; border-color: #3a1b22; }
+  button.danger.armed { background: #2a1218; border-color: #ff5470; color: #ff8296; }
   .panel.help { bottom: 16px; left: 16px; font-size: 11px; border: none; background: none; padding: 0; }
   button, select, input[type="range"] {
     background: #10131a; border: 1px solid var(--line); color: var(--ink);

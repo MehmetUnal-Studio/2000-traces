@@ -2,14 +2,19 @@
 // Minimal operator chrome around the artwork. Show mode ('H') hides all of it.
 const fmt = (ms) => `${Math.floor(ms / 1000)}.${Math.floor((ms % 1000) / 100)}s`;
 
-export function createHud({ packs, onPack, onPlayPause, onSeek, onSpeed, onFinal, onRestart, onExport, onFit, onDeselect, onRecord }) {
+export function createHud({ packs, onPack, onPlayPause, onSeek, onSpeed, onFinal, onRestart, onExport, onFit, onDeselect, onRecord, onLibrary }) {
   const el = document.createElement('div');
   el.id = 'hud';
   el.innerHTML = `
     <div class="panel top">
       <div class="brand">2000 TRACES <span class="dim">— collective record</span></div>
       <select id="pack"></select>
+      <button id="libBtn">KÜTÜPHANE</button>
       <div id="stats" class="dim"></div>
+    </div>
+    <div class="panel library" id="libPanel" hidden>
+      <div class="libHead">KÜTÜPHANE</div>
+      <div id="libBody"></div>
     </div>
     <div class="panel seat" id="seatPanel" hidden>
       <div class="pid" id="selPid"></div>
@@ -49,6 +54,39 @@ export function createHud({ packs, onPack, onPlayPause, onSeek, onSpeed, onFinal
   click('export', onExport);
   click('deselect', onDeselect);
   click('rec', onRecord);
+  click('libBtn', onLibrary);
+
+  // Two-step delete: first click arms the button ('EMİN MİSİN?') for 4 s,
+  // the second click within that window fires. Blur-on-click like everything
+  // else (keyboard safety during a live take).
+  const armedDelete = (btn, fn) => {
+    let timer = null;
+    const original = btn.textContent;
+    btn.onclick = (e) => {
+      e.currentTarget.blur();
+      if (timer === null) {
+        btn.textContent = 'EMİN MİSİN?';
+        btn.classList.add('armed');
+        timer = setTimeout(() => {
+          timer = null;
+          btn.textContent = original;
+          btn.classList.remove('armed');
+        }, 4000);
+      } else {
+        clearTimeout(timer);
+        timer = null;
+        fn();
+      }
+    };
+  };
+
+  const mkBtn = (label, fn, cls = '') => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    if (cls) b.className = cls;
+    if (fn) b.onclick = (e) => { e.currentTarget.blur(); fn(); };
+    return b;
+  };
 
   let hidden = false;
   window.addEventListener('keydown', (e) => {
@@ -84,6 +122,64 @@ export function createHud({ packs, onPack, onPlayPause, onSeek, onSpeed, onFinal
     setLiveMode(on) {
       for (const id of ['play', 'restart', 'scrub', 'speed', 'final', 'export', 'pack']) {
         $(id).disabled = on;
+      }
+    },
+    isLibraryOpen: () => !$('libPanel').hidden,
+    setLibraryOpen(on) { $('libPanel').hidden = !on; },
+    // model: { offline } | { packs, sessions } (server row shapes from
+    // GET /api/library) + handlers { onOpen, onDeletePack, onPackSession,
+    // onDeleteSession }. Full rebuild on every call — timers live in closures.
+    renderLibrary(model, handlers = {}) {
+      const body = $('libBody');
+      body.innerHTML = '';
+      if (model.offline) {
+        const d = document.createElement('div');
+        d.className = 'dim';
+        d.textContent = 'kayıt sunucusu kapalı (npm run panel)';
+        body.appendChild(d);
+        return;
+      }
+      const row = (title, meta, buttons) => {
+        const r = document.createElement('div');
+        r.className = 'libRow';
+        const info = document.createElement('div');
+        info.className = 'libInfo';
+        const t = document.createElement('div');
+        t.textContent = title;
+        const m = document.createElement('div');
+        m.className = 'dim';
+        m.textContent = meta;
+        info.append(t, m);
+        const acts = document.createElement('div');
+        acts.className = 'libActs';
+        acts.append(...buttons);
+        r.append(info, acts);
+        body.appendChild(r);
+      };
+      for (const p of model.packs) {
+        const del = mkBtn('SİL', null, 'danger');
+        armedDelete(del, () => handlers.onDeletePack?.(p.name));
+        row(
+          p.label ?? p.name,
+          `${p.lanes} şerit · ${(p.events ?? 0).toLocaleString('tr-TR')} olay`,
+          [mkBtn('AÇ', () => handlers.onOpen?.(p.name)), del],
+        );
+      }
+      const loose = model.sessions.filter((s) => s.packName === null);
+      for (const s of loose) {
+        const del = mkBtn('SİL', null, 'danger');
+        armedDelete(del, () => handlers.onDeleteSession?.(s.file));
+        row(
+          s.label ?? s.file,
+          `${(s.bytes / 1048576).toFixed(1)} MB${s.complete ? '' : ' · yarım'}`,
+          [mkBtn('PAKETLE', () => handlers.onPackSession?.(s.file)), del],
+        );
+      }
+      if (!model.packs.length && !loose.length) {
+        const d = document.createElement('div');
+        d.className = 'dim';
+        d.textContent = 'kütüphane boş';
+        body.appendChild(d);
       }
     },
     showSeat(info) {

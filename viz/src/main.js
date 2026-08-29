@@ -50,9 +50,70 @@ const hud = createHud({
     sessionId: current.pack.manifest.sessionId,
   }),
   onFit: () => view.fit(),
-  onDeselect: () => select(null),
+  onDeselect: () => (live ? selectLive(null) : select(null)),
   onRecord: () => (live ? stopRecording() : startRecording()),
+  onLibrary: () => toggleLibrary(),
 });
+
+// ------------------------------------------------------------------ library
+function toggleLibrary() {
+  const open = !hud.isLibraryOpen();
+  hud.setLibraryOpen(open);
+  if (open) refreshLibrary();
+}
+
+async function refreshLibrary() {
+  if (!hud.isLibraryOpen()) return;
+  let lib = null;
+  try {
+    const r = await fetch(`${RECORDER}/api/library`);
+    if (!r.ok) throw new Error('library');
+    lib = await r.json();
+  } catch { /* recorder offline */ }
+  if (!hud.isLibraryOpen()) return; // closed during the fetch
+  if (!lib) { hud.renderLibrary({ offline: true }); return; }
+  hud.renderLibrary(lib, {
+    onOpen: (name) => switchPack(name),
+    onDeletePack: (name) => libraryOp(
+      () => fetch(`${RECORDER}/api/packs/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+      { deletedPack: name },
+    ),
+    onPackSession: (file) => libraryOp(() => fetch(`${RECORDER}/api/pack`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file }),
+    })),
+    onDeleteSession: (file) => libraryOp(
+      () => fetch(`${RECORDER}/api/sessions/${encodeURIComponent(file)}`, { method: 'DELETE' }),
+    ),
+  });
+}
+
+// Run a library mutation, then re-sync everything that mirrors the disk:
+// the packs dropdown, the panel, and — if the open pack just vanished — the
+// stage (fall back to the first remaining pack or the empty state).
+async function libraryOp(fn, { deletedPack = null } = {}) {
+  let err = null;
+  try {
+    const r = await fn();
+    if (!r.ok) {
+      const body = await r.json().catch(() => null);
+      err = body?.error ?? `HTTP ${r.status}`;
+    }
+  } catch { err = 'kayıt sunucusuna ulaşılamadı'; }
+  PACKS = await fetchPacks();
+  hud.setPacks(PACKS, current?.name && PACKS.includes(current.name) ? current.name : undefined);
+  refreshLibrary();
+  if (err) { hud.setStats(`işlem başarısız — ${err}`); return; }
+  if (deletedPack && current?.name === deletedPack) {
+    if (PACKS.length) await switchPack(PACKS[0], 'açık paket silindi');
+    else {
+      clearStage();
+      hud.setPacks(PACKS);
+      hud.setStats(`açık paket silindi · ${EMPTY_LIBRARY_MSG}`);
+      hud.showSeat(null);
+    }
+  }
+}
 
 // ---------------------------------------------------------------- pack mode
 function laneInfo(lane) {
@@ -88,13 +149,33 @@ function select(lane) {
   hud.showSeat(lane === null ? null : laneInfo(lane));
 }
 
+// Live isolation: selection keyed by (z,s), not lane index — a derived→
+// genuine roster rebuild reshuffles lanes, and the pid must survive it.
+function selectLive(lane) {
+  if (!live?.disc) return;
+  const meta = lane === null ? null : live.laneMeta?.[lane] ?? null;
+  live.sel = meta ? { z: meta.zone, s: meta.seat, pid: meta.pid } : null;
+  live.selShown = null; // force the seat panel refresh in the frame loop
+  live.disc.uniforms.uSelLane.value = meta ? lane : -1;
+  if (!meta) hud.showSeat(null);
+}
+
+// Re-resolve the (z,s) selection against a freshly built live disc.
+function applyLiveSel() {
+  if (!live?.sel || !live.disc) return;
+  const lane = live.laneOf(live.sel.z, live.sel.s);
+  live.disc.uniforms.uSelLane.value = lane === null ? -1 : lane;
+  live.selShown = null;
+}
+
 view.onCanvasClick((x, y) => {
+  if (live?.disc) { selectLive(live.layout.pickLane(x, y)); return; }
   if (!current) return;
   select(current.layout.pickLane(x, y));
 });
 
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') select(null);
+  if (e.key === 'Escape') (live ? selectLive(null) : select(null));
   if (e.key === ' ') {
     // Space must NEVER reach a focused button — during a live take it would
     // stop the one-shot recording. It toggles the transport in pack mode only.
@@ -167,7 +248,10 @@ async function startRecording() {
     return;
   }
   live = {
-    es: null, disc: null, layout: null, laneOf: null, maxT: 0, queue: [],
+    es: null, disc: null, layout: null, laneOf: null, laneMeta: null, maxT: 0, queue: [],
+    laneEvents: null,    // per-lane live event counts (seat panel)
+    sel: null,           // isolated seat: { z, s, pid } — survives rebuilds
+    selShown: null,      // last seat-panel snapshot (avoid innerHTML churn)
     durationMs: st.durationMs ?? 90000, visualSeed: null,
     started: false,      // server confirmed RECORDING for this take
     starting: false,     // arm/start handshake in flight
@@ -314,13 +398,16 @@ function ensureLiveDisc(roster, { derived = false } = {}) {
   // a derived roster covers only whoever acted in the first batches — give it
   // a far bigger spare band so latecomers are not silently invisible
   const spareLanes = derived ? 256 : 64;
-  const { layout, laneOf } = rosterLayout(roster, live.durationMs, buildLayout, spareLanes);
+  const { layout, laneOf, laneMeta, laneCount } = rosterLayout(roster, live.durationMs, buildLayout, spareLanes);
   live.layout = layout;
   live.laneOf = laneOf;
+  live.laneMeta = laneMeta;
+  live.laneEvents = new Uint32Array(laneCount);
   live.rosterDerived = derived;
   live.replayBuf = derived ? [] : null; // kept so a genuine roster can rebuild
   live.disc = createLiveDisc(layout, { visualSeed: live.visualSeed ?? 1 });
   view.scene.add(live.disc.group);
+  applyLiveSel(); // a (z,s) isolation must survive the disc (re)build
   if (live.queue.length) processLiveEvents(live.queue.splice(0));
 }
 
@@ -346,7 +433,7 @@ function processLiveEvents(events) {
   for (const e of events) {
     if (e.t > live.maxT) live.maxT = e.t;
     const lane = live.laneOf(e.z, e.s);
-    if (lane !== null) live.disc.append(lane, e);
+    if (lane !== null) { live.disc.append(lane, e); live.laneEvents[lane] += 1; }
     else live.dropped += 1; // spare band full — surfaced in the rec stats line
   }
   live.disc.commit();
@@ -417,12 +504,14 @@ async function handleLive(msg) {
         // empty take: keep the notice visible AFTER the auto-switch resolves
         if (PACKS.length) await switchPack(PACKS[0], 'kayıt boş kaldı — akışta hiç olay yoktu');
         else hud.setStats(`kayıt boş kaldı — akışta hiç olay yoktu · ${EMPTY_LIBRARY_MSG}`);
+        refreshLibrary(); // the empty take still left a session file behind
         return;
       }
       PACKS = await fetchPacks();
       if (!PACKS.includes(packName)) PACKS.push(packName);
       hud.setPacks(PACKS, packName);
       await switchPack(packName);
+      refreshLibrary(); // a finished take is new library content
     } else if (msg.state === 'IDLE' && msg.error) {
       exitLive('kayıt hatası — sunucu loguna bak');
     }
@@ -440,6 +529,7 @@ function stopLiveUi(err) {
   if (live?.watchdog) clearInterval(live.watchdog);
   live?.es?.close();
   if (live?.disc) { view.scene.remove(live.disc.group); live.disc.dispose(); }
+  if (live?.sel) hud.showSeat(null); // a live isolation panel must not linger
   live = null;
   hud.setLiveMode(false);
   hud.setRecState('● KAYIT', false);
@@ -471,6 +561,20 @@ function frame(now) {
     d.playheadMat.opacity = 0.55;
     d.playhead.rotation.z = -(2 * Math.PI * live.maxT) / live.durationMs;
     hud.setTime(live.maxT, true);
+    if (live.sel) {
+      // live-updating event count for the isolated seat, DOM-churn-free
+      const lane = d.uniforms.uSelLane.value;
+      const count = lane >= 0 ? live.laneEvents[lane] : 0;
+      const snap = `${live.sel.pid}:${count}`;
+      if (live.selShown !== snap) {
+        live.selShown = snap;
+        hud.showSeat({
+          title: live.sel.pid,
+          meta: `zone <b>${live.sel.z}</b> · koltuk <b>${live.sel.s}</b><br>` +
+            `${count.toLocaleString('tr-TR')} olay · canlı`,
+        });
+      }
+    }
     if (!live.stopping) {
       // '■ DURDURULUYOR…' / '■ PAKETLENIYOR…' own the label while stopping
       hud.setRecState(
@@ -502,12 +606,19 @@ function frame(now) {
   view.renderer.render(view.scene, view.camera);
 }
 
-if (PACKS.length) {
-  switchPack(PACKS[0]).then(() => requestAnimationFrame(frame));
-} else {
-  hud.setStats(EMPTY_LIBRARY_MSG); // fresh install: idle state, no errors
-  requestAnimationFrame(frame);
+// Boot: if the recorder is already mid-take, auto-attach through the exact
+// same path as a manual KAYIT press (startRecording probes status, opens the
+// SSE tap, and the hello's state:RECORDING takes the attach branch).
+async function boot() {
+  requestAnimationFrame(frame); // frame() no-ops until a disc exists
+  try {
+    const r = await fetch(`${RECORDER}/api/status`);
+    if (r.ok && (await r.json()).state === 'RECORDING') { startRecording(); return; }
+  } catch { /* recorder offline: normal pack-mode boot */ }
+  if (PACKS.length) await switchPack(PACKS[0]);
+  else hud.setStats(EMPTY_LIBRARY_MSG); // fresh install: idle state, no errors
 }
+boot();
 
 // debug hook for driving the app programmatically
 import * as THREE from 'three';
