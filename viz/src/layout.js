@@ -36,7 +36,9 @@ export function buildLayout(manifest) {
     }
     let best = lo;
     if (lo > 0 && Math.abs(laneRadius[lo - 1] - r) < Math.abs(laneRadius[lo] - r)) best = lo - 1;
-    return Math.abs(laneRadius[best] - r) <= laneWidth * 1.2 ? best : null;
+    // 0.6 lane widths: reaches just past a lane's own groove without
+    // swallowing the 2-laneWidth zone gaps (contract: null in a gap)
+    return Math.abs(laneRadius[best] - r) <= laneWidth * 0.6 ? best : null;
   };
 
   return { laneWidth, laneRadius, zoneBands, angleOf, pickLane, durationMs };

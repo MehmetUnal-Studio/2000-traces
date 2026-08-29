@@ -17,6 +17,7 @@ export function createLiveDisc(layout, { visualSeed = 1 } = {}) {
     uReplaying: { value: 1 },
     uSelLane: { value: -1 },
     uPointScale: { value: 400 },
+    uPointMax: { value: 8 },
     uLaneBoost: { value: laneBoost(layout.laneRadius.length) },
     uLineColors: { value: lineColors() },
   };
@@ -75,12 +76,15 @@ export function createLiveDisc(layout, { visualSeed = 1 } = {}) {
       grainCount += 1;
     },
 
-    // push appended ranges to the GPU; call once per frame after batches
+    // push appended ranges to the GPU. Safe to call multiple times between
+    // renders: ranges ACCUMULATE on the attribute — never clearUpdateRanges()
+    // here, or a not-yet-rendered commit's range would be lost forever (three
+    // r185's WebGLAttributes.updateBuffer merges the listed ranges, uploads
+    // them, then clears the list itself after the upload).
     commit() {
       for (const chunk of chunks) {
         if (chunk.dirtyFrom >= chunk.count) continue;
         for (const attr of Object.values(chunk.attrs)) {
-          attr.clearUpdateRanges();
           attr.addUpdateRange(chunk.dirtyFrom, chunk.count - chunk.dirtyFrom);
           attr.needsUpdate = true;
         }

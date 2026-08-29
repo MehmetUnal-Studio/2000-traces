@@ -63,6 +63,7 @@ export function buildDisc(pack, layout) {
     uReplaying: { value: 0 },
     uSelLane: { value: -1 },
     uPointScale: { value: 400 },
+    uPointMax: { value: 8 },
     uLaneBoost: { value: laneBoost(manifest.laneCount) },
     uLineColors: { value: lineColors() },
   };

@@ -15,6 +15,7 @@ export const DISC_VERTEX = /* glsl */ `
   uniform float uReplaying;   // 1 while the record is still being written
   uniform float uSelLane;     // -1 none, else isolated lane
   uniform float uPointScale;  // device-pixels per world unit
+  uniform float uPointMax;    // point-size cap in device px (raised for export)
   uniform float uLaneBoost;   // exposure lift for sparse sessions
   uniform vec3 uLineColors[10];
 
@@ -44,7 +45,7 @@ export const DISC_VERTEX = /* glsl */ `
     vColor = mix(grain, note, aKind);
 
     float px = uPointScale * (aKind > 0.5 ? 0.0135 : 0.0075) * (1.0 + isSel);
-    gl_PointSize = clamp(px, 1.0, 8.0);
+    gl_PointSize = clamp(px, 1.0, uPointMax);
   }
 `;
 

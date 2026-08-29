@@ -95,7 +95,11 @@ export function createHud({ packs, onPack, onPlayPause, onSeek, onSpeed, onFinal
 }
 
 export function updateZoneLabels(layer, layout, project, pxPerWorld) {
-  if (layer.childElementCount !== layout.zoneBands.length) {
+  // rebuild keyed on the band CONTENT, not just count: equal-count layouts
+  // with different zone names (pack switch, live spare band) must relabel
+  const sig = layout.zoneBands.map((b) => b.zone + b.laneStart).join();
+  if (layer.dataset.sig !== sig) {
+    layer.dataset.sig = sig;
     layer.innerHTML = layout.zoneBands.map((b) => `<span class="zl">${b.zone}</span>`).join('');
   }
   layout.zoneBands.forEach((band, i) => {

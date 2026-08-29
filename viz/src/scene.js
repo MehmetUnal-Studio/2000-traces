@@ -40,12 +40,18 @@ export function createScene(canvas) {
   let dragging = false; let moved = 0; let last = null;
   const listeners = { click: [] };
 
+  const resetDrag = () => { dragging = false; last = null; };
+
   canvas.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return; // right/middle click must not start a pan
     dragging = true; moved = 0; last = [e.clientX, e.clientY];
     canvas.setPointerCapture(e.pointerId);
   });
   canvas.addEventListener('pointermove', (e) => {
     if (!dragging) return;
+    // self-heal: a swallowed pointerup (native context menu etc.) leaves the
+    // flag stuck — no button held means no drag
+    if (e.buttons === 0) { resetDrag(); return; }
     const dx = e.clientX - last[0]; const dy = e.clientY - last[1];
     moved += Math.abs(dx) + Math.abs(dy);
     last = [e.clientX, e.clientY];
@@ -53,12 +59,16 @@ export function createScene(canvas) {
     camera.position.y += (dy / viewH) * 2 / camera.zoom;
   });
   canvas.addEventListener('pointerup', (e) => {
-    dragging = false;
-    if (moved < 5) {
+    const wasDragging = dragging;
+    resetDrag();
+    if (wasDragging && moved < 5) {
       const w = worldFromScreen(e.clientX, e.clientY);
       listeners.click.forEach((fn) => fn(w.x, w.y));
     }
   });
+  canvas.addEventListener('pointercancel', resetDrag);
+  canvas.addEventListener('lostpointercapture', resetDrag);
+  window.addEventListener('blur', resetDrag);
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
     const before = worldFromScreen(e.clientX, e.clientY);

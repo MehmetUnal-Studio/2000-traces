@@ -3,7 +3,7 @@
 // 4096x4096 target and hands the viewer a PNG — print/archive quality.
 import * as THREE from 'three';
 
-export function exportStill({ renderer, scene, uniforms, sessionId, size = 4096 }) {
+export function exportStill({ renderer, scene, uniforms, playheadMat = null, sessionId, size = 4096 }) {
   const camera = new THREE.OrthographicCamera(-1.02, 1.02, 1.02, -1.02, -10, 10);
   camera.position.z = 1;
 
@@ -11,9 +11,18 @@ export function exportStill({ renderer, scene, uniforms, sessionId, size = 4096 
   const prevTime = uniforms.uTime.value;
   const prevScale = uniforms.uPointScale.value;
   const prevSel = uniforms.uSelLane.value;
+  const prevReplaying = uniforms.uReplaying.value;
+  const prevMax = uniforms.uPointMax.value;
+  const prevPlayhead = playheadMat ? playheadMat.opacity : 0;
   uniforms.uTime.value = uniforms.uDuration.value;
   uniforms.uPointScale.value = size / 2.04;
   uniforms.uSelLane.value = -1;
+  // finished-state render: no fresh-glow wedge, no playhead ray in the archive
+  uniforms.uReplaying.value = 0;
+  // scale the point-size cap with the target so marks keep their on-screen
+  // proportion (8px cap at ~screen scale -> ~24px at 4096)
+  uniforms.uPointMax.value = size / 170;
+  if (playheadMat) playheadMat.opacity = 0;
 
   renderer.setRenderTarget(target);
   renderer.render(scene, camera);
@@ -25,6 +34,9 @@ export function exportStill({ renderer, scene, uniforms, sessionId, size = 4096 
   uniforms.uTime.value = prevTime;
   uniforms.uPointScale.value = prevScale;
   uniforms.uSelLane.value = prevSel;
+  uniforms.uReplaying.value = prevReplaying;
+  uniforms.uPointMax.value = prevMax;
+  if (playheadMat) playheadMat.opacity = prevPlayhead;
 
   // flip vertically into a canvas
   const canvas = document.createElement('canvas');

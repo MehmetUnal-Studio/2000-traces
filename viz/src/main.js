@@ -46,7 +46,8 @@ const hud = createHud({
   onRestart: () => current?.transport.restart(),
   onExport: () => current && exportStill({
     renderer: view.renderer, scene: view.scene,
-    uniforms: current.disc.uniforms, sessionId: current.pack.manifest.sessionId,
+    uniforms: current.disc.uniforms, playheadMat: current.disc.playheadMat,
+    sessionId: current.pack.manifest.sessionId,
   }),
   onFit: () => view.fit(),
   onDeselect: () => select(null),
@@ -123,7 +124,10 @@ async function switchPack(name, notice = null) {
     await new Promise((r) => setTimeout(r, 600)); // dev server may be settling
     if (stale()) return;
     try { pack = await loadPack(name); }
-    catch { if (!stale()) hud.setStats(`paket yüklenemedi: ${name}`); return; }
+    catch (err) {
+      if (!stale()) hud.setStats(`paket yüklenemedi: ${name} — ${err?.message ?? err}`);
+      return;
+    }
   }
   if (stale()) return; // an overlapping switch/recording won — no GPU built yet
   const layout = buildLayout(pack.manifest);
@@ -171,6 +175,7 @@ async function startRecording() {
     cancelling: false,   // operator aborted before the take started
     rosterDerived: false, // disc layout came from the batch-derived fallback
     replayBuf: null,     // events kept for a rebuild while rosterDerived
+    dropped: 0,          // events skipped because every spare lane was taken
     pendingRoster: null, // roster broadcast that arrived before state:RECORDING
     prevPack: current?.name ?? null,
     staleSince: null, failedProbes: 0, watchdog: null,
@@ -306,7 +311,10 @@ function exitLive(err) {
 
 function ensureLiveDisc(roster, { derived = false } = {}) {
   if (live.disc) return;
-  const { layout, laneOf } = rosterLayout(roster, live.durationMs, buildLayout);
+  // a derived roster covers only whoever acted in the first batches — give it
+  // a far bigger spare band so latecomers are not silently invisible
+  const spareLanes = derived ? 256 : 64;
+  const { layout, laneOf } = rosterLayout(roster, live.durationMs, buildLayout, spareLanes);
   live.layout = layout;
   live.laneOf = laneOf;
   live.rosterDerived = derived;
@@ -324,6 +332,7 @@ function rebuildLiveDisc(roster) {
   live.disc.dispose();
   live.disc = null;
   live.maxT = 0;
+  live.dropped = 0; // genuine roster: previous overflow skips are replayed
   ensureLiveDisc(roster);
   if (buf.length) processLiveEvents(buf);
 }
@@ -338,6 +347,7 @@ function processLiveEvents(events) {
     if (e.t > live.maxT) live.maxT = e.t;
     const lane = live.laneOf(e.z, e.s);
     if (lane !== null) live.disc.append(lane, e);
+    else live.dropped += 1; // spare band full — surfaced in the rec stats line
   }
   live.disc.commit();
 }
@@ -466,7 +476,8 @@ function frame(now) {
       hud.setRecState(
         live.staleSince !== null
           ? '⚠ BAĞLANTI KOPTU — yeniden bağlanıyor'
-          : `■ ${(live.maxT / 1000).toFixed(1)}s · ${d.grainCount().toLocaleString('tr-TR')} tane`,
+          : `■ ${(live.maxT / 1000).toFixed(1)}s · ${d.grainCount().toLocaleString('tr-TR')} tane` +
+            (live.dropped ? ` · ⚠ ${live.dropped.toLocaleString('tr-TR')} olay şerit dışı` : ''),
         true,
       );
     }
