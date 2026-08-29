@@ -36,16 +36,19 @@ export function createHud({ packs, onPack, onPlayPause, onSeek, onSpeed, onFinal
   document.body.appendChild(el);
 
   const $ = (id) => el.querySelector('#' + id);
-  $('pack').onchange = (e) => onPack(e.target.value);
-  $('play').onclick = onPlayPause;
-  $('restart').onclick = onRestart;
+  // Buttons blur on click: a focused button would otherwise be re-activated
+  // by Space/Enter later — during a live take that would stop the recording.
+  const click = (id, fn) => { $(id).onclick = (e) => { e.currentTarget.blur(); fn(); }; };
+  $('pack').onchange = (e) => { e.target.blur(); onPack(e.target.value); };
+  click('play', onPlayPause);
+  click('restart', onRestart);
   $('scrub').oninput = (e) => onSeek(Number(e.target.value));
-  $('speed').onchange = (e) => onSpeed(Number(e.target.value));
-  $('final').onclick = onFinal;
-  $('fit').onclick = onFit;
-  $('export').onclick = onExport;
-  $('deselect').onclick = onDeselect;
-  $('rec').onclick = onRecord;
+  $('speed').onchange = (e) => { e.target.blur(); onSpeed(Number(e.target.value)); };
+  click('final', onFinal);
+  click('fit', onFit);
+  click('export', onExport);
+  click('deselect', onDeselect);
+  click('rec', onRecord);
 
   let hidden = false;
   window.addEventListener('keydown', (e) => {
@@ -57,7 +60,9 @@ export function createHud({ packs, onPack, onPlayPause, onSeek, onSpeed, onFinal
   document.body.appendChild(labelLayer);
 
   const setPacks = (names, selected) => {
-    $('pack').innerHTML = names.map((p) => `<option value="${p}">${p}</option>`).join('');
+    $('pack').innerHTML = names.length
+      ? names.map((p) => `<option value="${p}">${p}</option>`).join('')
+      : '<option value="" disabled selected>kayıt yok</option>';
     if (selected) $('pack').value = selected;
   };
   setPacks(packs);
