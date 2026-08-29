@@ -68,8 +68,8 @@
 
 **Files:** `src/server.js`, `src/session.js` (meta passthrough), `src/recorder.js` (opts.label → createSession), `src/viz-pack.js` (manifest.label + index entry), tests in existing files.
 
-- [ ] Step 1: Failing tests: start with `{label:'prova 1'}` → session JSONL header has `label:'prova 1'`; packed manifest and index entry carry it; `/api/library` session row shows it; a hostile label (`'<script>x'`, 200 chars) is sanitized/truncated.
-- [ ] Step 2: Implement; `npm test` green; commit `feat: take labels through the whole pipeline`.
+- [x] Step 1: Failing tests: start with `{label:'prova 1'}` → session JSONL header has `label:'prova 1'`; packed manifest and index entry carry it; `/api/library` session row shows it; a hostile label (`'<script>x'`, 200 chars) is sanitized/truncated.
+- [x] Step 2: Implement; `npm test` green; commit `feat: take labels through the whole pipeline`.
 
 ### Task 6: Viz core — live mode robustness
 
@@ -77,9 +77,9 @@
 
 **Files:** `viz/src/main.js`, `viz/src/hud.js`; no node tests (viz), but `npm test` must stay green.
 
-- [ ] Step 1: Implement the startRecording/state-machine restructure exactly as described (order: probe status → open ES → hello → arm+start (response-checked) → `state:RECORDING` → clear stage, build disc from fresh roster; attach path: hello.state===RECORDING → build immediately from hello.roster).
-- [ ] Step 2: Implement the rest of the listed fixes.
-- [ ] Step 3: `npm test` green (no regressions); commit `fix(viz): live-mode state machine, reentrancy guards, watchdog, keyboard safety, honest labels`.
+- [x] Step 1: Implement the startRecording/state-machine restructure exactly as described (order: probe status → open ES → hello → arm+start (response-checked) → `state:RECORDING` → clear stage, build disc from fresh roster; attach path: hello.state===RECORDING → build immediately from hello.roster).
+- [x] Step 2: Implement the rest of the listed fixes.
+- [x] Step 3: `npm test` green (no regressions); commit `fix(viz): live-mode state machine, reentrancy guards, watchdog, keyboard safety, honest labels`.
 
 ### Task 7: Viz render/interaction fixes
 
@@ -87,8 +87,8 @@
 
 **Files:** `viz/src/live-disc.js`, `viz/src/export-still.js`, `viz/src/shaders.js`, `viz/src/disc.js`, `viz/src/pack-loader.js`, `viz/src/layout.js`, `viz/src/scene.js`, `viz/src/hud.js`.
 
-- [ ] Step 1: Implement all; keep shader changes minimal and dual-used by disc + live-disc (shared uniforms object gains `uPointMax`).
-- [ ] Step 2: `npm test` green; commit `fix(viz): GPU update ranges, export fidelity, loader validation, picking and pointer edge cases, label rebuilds`.
+- [x] Step 1: Implement all; keep shader changes minimal and dual-used by disc + live-disc (shared uniforms object gains `uPointMax`).
+- [x] Step 2: `npm test` green; commit `fix(viz): GPU update ranges, export fidelity, loader validation, picking and pointer edge cases, label rebuilds`.
 
 ### Task 8: Library panel (KÜTÜPHANE) + auto-attach + live isolation
 
@@ -96,15 +96,15 @@
 
 **Files:** `viz/src/main.js`, `viz/src/hud.js`, `viz/index.html` (styles), maybe `viz/src/library.js`.
 
-- [ ] Step 1: KÜTÜPHANE button in the top panel toggles a right-side panel listing, from `GET /api/library` (RECORDER origin): each pack row → name/label, `lanes · events`, buttons `AÇ` (switchPack) and `SİL`; each un-packed session row → file, size, `PAKETLE` and `SİL`. `SİL` is two-step: first click turns the button into `EMİN MİSİN?` for 4 s, second click calls the DELETE endpoint. After any op: re-fetch library + packs index; if the currently-open pack was deleted, fall back to the first remaining pack or the empty state. Panel refresh also after every completed recording. Recorder offline → panel shows 'kayıt sunucusu kapalı (npm run panel)'.
-- [ ] Step 2: Auto-attach: on boot, `GET /api/status`; if RECORDING → enter live mode attach path automatically (same code path as Task 6's attach).
-- [ ] Step 3: Live isolation: clicking a lane during live sets `uSelLane` on the live disc (laneOf lookup via layout.pickLane); seat panel shows `pid` (compute zone letter + seat from the live layout's lane table — extend rosterLayout to return `laneMeta` array) and a live-updating event count; Esc / empty-click clears.
-- [ ] Step 4: `npm test` green; commit `feat(viz): recording library with delete, auto-attach, live seat isolation`.
+- [x] Step 1: KÜTÜPHANE button in the top panel toggles a right-side panel listing, from `GET /api/library` (RECORDER origin): each pack row → name/label, `lanes · events`, buttons `AÇ` (switchPack) and `SİL`; each un-packed session row → file, size, `PAKETLE` and `SİL`. `SİL` is two-step: first click turns the button into `EMİN MİSİN?` for 4 s, second click calls the DELETE endpoint. After any op: re-fetch library + packs index; if the currently-open pack was deleted, fall back to the first remaining pack or the empty state. Panel refresh also after every completed recording. Recorder offline → panel shows 'kayıt sunucusu kapalı (npm run panel)'.
+- [x] Step 2: Auto-attach: on boot, `GET /api/status`; if RECORDING → enter live mode attach path automatically (same code path as Task 6's attach).
+- [x] Step 3: Live isolation: clicking a lane during live sets `uSelLane` on the live disc (laneOf lookup via layout.pickLane); seat panel shows `pid` (compute zone letter + seat from the live layout's lane table — extend rosterLayout to return `laneMeta` array) and a live-updating event count; Esc / empty-click clears.
+- [x] Step 4: `npm test` green; commit `feat(viz): recording library with delete, auto-attach, live seat isolation`.
 
 ### Task 9: Docs + final sweep
 
-- [ ] Step 1: Update `docs/superpowers/plans/` checkboxes; write `docs/OPERATOR.md`: nasıl kayıt alınır (panel + viz), kütüphane/silme, canlı izolasyon, ortam değişkenleri (AUTH vs TOKEN önceliği dahil), bilinen sınırlar.
-- [ ] Step 2: Run the FULL suite; `git status` clean; commit `docs: operator guide`.
+- [x] Step 1: Update `docs/superpowers/plans/` checkboxes; write `docs/OPERATOR.md`: nasıl kayıt alınır (panel + viz), kütüphane/silme, canlı izolasyon, ortam değişkenleri (AUTH vs TOKEN önceliği dahil), bilinen sınırlar.
+- [x] Step 2: Run the FULL suite; `git status` clean; commit `docs: operator guide`.
 
 ---
 
