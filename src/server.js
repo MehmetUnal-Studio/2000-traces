@@ -99,12 +99,16 @@ export function createControlServer({
   // During FINALIZING `current` is already null: the `finalizing` snapshot
   // keeps status reporting THIS session, not the previous take's lastSummary.
   const status = () => ({
-    state: current?.session?.state?.() ?? phase,
+    // The in-memory session reaches COMPLETE before its final disk flush and
+    // optional pack have finished. Only the controller may publish COMPLETE.
+    state: current
+      ? (current.session?.state?.() === 'RECORDING' ? 'RECORDING' : 'FINALIZING')
+      : phase,
     stats: current?.session?.stats?.() ?? finalizing?.stats ?? lastSummary?.stats ?? null,
     participants: current?.session?.store?.participantCount?.() ?? finalizing?.participants ?? lastSummary?.participants ?? 0,
     sessionId: current?.sessionId ?? finalizing?.sessionId ?? lastSummary?.sessionId ?? null,
-    packName: finalizing ? null : lastSummary?.packName ?? null,
-    packError: finalizing ? null : lastSummary?.packError ?? null,
+    packName: current || finalizing ? null : lastSummary?.packName ?? null,
+    packError: current || finalizing ? null : lastSummary?.packError ?? null,
     lastError,
     durationMs,
     label: current?.label ?? finalizing?.label ?? lastSummary?.label ?? '',
