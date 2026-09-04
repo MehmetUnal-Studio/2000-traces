@@ -1,145 +1,103 @@
-# 2000 TRACES — Operatör Kılavuzu
+# 2000 TRACES — Operatör kılavuzu
 
-Bu doküman gösteri gecesi (show night) sırasında sistemi çalıştıracak operatör içindir.
-Her iddia kod okunarak doğrulanmıştır: `src/server.js`, `src/env.js`, `src/sources/live-source.js`,
-`viz/src/main.js`, `viz/src/hud.js`.
+Bu kılavuz kayıt masasını, görselleştiriciyi ve oturum arşivini yerel makinede kullanmak içindir. Kayıt sunucusu `127.0.0.1` üzerinde çalışır. Tarayıcıyı yenilemek, bir kayıt başlatmak veya durdurmak anlamına gelmez.
 
-## 1. Kurulum ve başlatma
+## 1. Güvenli önizleme
 
-İki süreç gerekir, ikisi de ayrı terminal:
+Node.js 22.12+ ile proje kökünde:
 
-```
-npm run panel   # kayıt sunucusu (src/server.js) — 127.0.0.1:8787, sadece loopback
-npm run viz     # görselleştirici (Vite dev server, viz/src/main.js)
+```sh
+npm ci
+npm run viz
 ```
 
-`npm run panel` sadece `127.0.0.1`'e bağlanır — venue LAN'ına asla açılmaz (`src/server.js` yorum:
-"Local operator panel: bind loopback only, never the venue LAN"). Port `PANEL_PORT` env değişkeni ile
-değiştirilebilir (varsayılan 8787).
+[Örnek evreni aç](http://127.0.0.1:5174/?demo=1). Bu mod bellekte üretilen, 2.000 katılımcılı ve 90 saniyelik sentetik veri kullanır. Kayıt açmaz, ham oturum yazmaz ve upstream SSE bağlantısı gerektirmez. Arşiv boşsa görselleştirici örneği kendiliğinden gösterir; gerçek kayıt her zaman kullanıcı eylemi gerektirir.
 
-`npm run panel` açılmadan `npm run viz` açılırsa viz "kayıt sunucusu kapalı — önce çalıştır: npm run panel"
-mesajını gösterir; sistemi çökertmez.
+`npm run build` uygulamayı `dist-viz/` içine üretir; kayıt paketlerini bu dizine kopyalamaz. `npm run preview` derlenmiş uygulamayı sunar. Yerel dev ve preview sunucuları `/packs/` isteklerini `viz/public/packs/` dizininden okur; taşınabilir `dist-viz/` tek başına yerel kayıtları içermez.
 
-## 2. Nasıl kayıt alınır
+## 2. Kayıt için başlatma
 
-Kayıt akışı bir state machine'dir: `IDLE → ARMED → RECORDING → FINALIZING → COMPLETE`.
+Canlı akış bilgileri yerel `.env` dosyasında veya süreç ortamında bulunmalıdır. Değerleri Git'e, ekran görüntülerine veya raporlara eklemeyin.
 
-### ui/index.html kontrol panelinden (operatör masası)
-`http://127.0.0.1:8787/` adresindeki kontrol paneli:
-1. **ARM** düğmesi — `POST /api/arm`. IDLE veya COMPLETE'ten ARMED'e geçer.
-   ARMED iken tekrar basmak **disarm**'dır (ARMED → IDLE) — yanlışlıkla kolluysanız kurtarır.
-2. Panel ARMED durumdayken düğme **DISARM**'a döner.
-3. **● KAYIT** (start) — `POST /api/start`, sadece ARMED fazından çalışır (409 döner aksi halde).
-   Body'e opsiyonel `{"label": "prova 1"}` verilebilir (bkz. §3).
-4. Kayıt 90 saniyelik (`durationMs`, varsayılan 90000 ms) **tek atımlık** bir show artifact'ıdır — geri
-   sarılmaz, üstüne yazılmaz.
-5. **DUR** (stop) — `POST /api/stop` — sadece RECORDING sırasında (yani `current` set iken) çalışır;
-   FINALIZING sırasında 409 döner ("cannot stop from FINALIZING") — bir take paketlenirken durdurulamaz.
-6. Panel `HATA` alanını `lastError` / `packError` alanlarından render eder — kayıt başarısız olsa bile
-   bu görünür kalır, sessizce kaybolmaz.
+| Değişken | Kullanım |
+| --- | --- |
+| `CS_EVENTS_URL` | Upstream SSE akışının URL'i; zorunlu |
+| `CS_EVENTS_TOKEN` | Bearer kimlik bilgisi; TOKEN veya AUTH gerekir |
+| `CS_EVENTS_AUTH` | Basic kimlik bilgisi; TOKEN veya AUTH gerekir |
+| `PANEL_PORT` | Panel portu; varsayılan `8787` |
 
-### viz üzerinden (● KAYIT)
-`npm run viz` sayfasında HUD'daki **● KAYIT** düğmesi aynı `/api/arm` → `/api/start` akışını sunucu
-durumunu (`/api/status`) önce sorup, sonra `/api/live` SSE bağlantısını açıp, sonra arm+start çağırarak
-yürütür. `RECORDING` state'i gelene kadar sahne temizlenmez/yeniden kurulmaz — sunucu onayı olmadan
-önceki pack imha edilmez. Kayıt sırasında Space/Enter tuşları **asla** kaydı durdurmaz (sadece pack
-modunda transport'u aç/kapatır); tüm HUD düğmeleri tıklamadan sonra blur olur, böylece boşluk tuşuna
-yanlışlıkla basmak DUR'a basmış gibi davranmaz.
+TOKEN ve AUTH birlikte verilirse TOKEN kullanılır; sunucu konsolu bunu bildirir. Ortam değişkenleri `.env` değerlerinden önce gelir. Sürekli 401/403 yanıtı bir kez yeniden denenir, ardından kayıt hatası bildirilir.
 
-Kayıt bitince viz otomatik olarak "■ PAKETLENIYOR…" gösterir (FINALIZING/COMPLETE), ardından paket
-hazır olduğunda yeni pack'e otomatik geçer.
+İki ayrı terminal açın:
 
-### Take label (etiket)
-`POST /api/start` body'sinde `{"label": "..."}` verilebilir — en fazla 40 karakter, yalnız
-`[\p{L}\p{N} _-]` karakterlerine indirgenir (script/HTML enjeksiyonu vs. temizlenir). Etiket:
-session JSONL header'ına, paket manifestine, `index.json`'a ve `/api/library` satırlarına akar;
-hello/state broadcast'lerinde de görünür.
+```sh
+npm run panel
+```
 
-## 3. Kütüphane (KÜTÜPHANE paneli) — listeleme, paketleme, silme
+```sh
+npm run viz
+```
 
-viz HUD'daki **KÜTÜPHANE** düğmesi sağda bir panel açar; içerik `GET /api/library` (kayıt sunucusundan)
-ile doldurulur — iki liste:
+- Kayıt masası: [127.0.0.1:8787](http://127.0.0.1:8787/)
+- Görselleştirici: [127.0.0.1:5174](http://127.0.0.1:5174/)
 
-- **Paketler**: isim/etiket, `lanes · events`, düğmeler **AÇ** (switchPack ile o pakete geçer) ve **SİL**.
-- **Paketlenmemiş oturumlar** (ham `.jsonl`): dosya adı, boyut, düğmeler **PAKETLE** (`POST /api/pack`
-  `{file}` ile mevcut sessions dizinindeki bir dosyayı pack'ler) ve **SİL**.
+Paneli açmak upstream'e bağlanmaz; bağlantı ancak kayıt başladığında kurulur. Sunucunun çalışıyor olması, upstream'den veri alınabildiği anlamına gelmez. Özel `PANEL_PORT` kullanılıyorsa panel adresini buna göre değiştirin; görselleştiricinin API adresi ayrıca bu yapılandırmayla eşleşmelidir.
 
-**SİL iki aşamalıdır**: ilk tıklama düğmeyi 4 saniyeliğine **EMİN MİSİN?**'e çevirir; ikinci tıklama
-gerçek `DELETE /api/sessions/<dosya>` veya `DELETE /api/packs/<isim>` çağrısını yapar. Her işlemden
-sonra kütüphane + paket index'i yeniden çekilir; açık pack silinmişse bir sonraki pakete veya boş
-duruma düşülür. Her tamamlanan kayıttan sonra panel otomatik yenilenir.
+## 3. Kayıt masasından oturum alma
 
-Aktif kayıt yapılan oturum (veya finalize edilmekte olan) **silinemez/paketlenemez** — sunucu 409
-döner ("session is still recording"); 90 saniyelik show artifact'ı asla ayağının altından çekilmez.
+Durum akışı: `IDLE → ARMED → RECORDING → FINALIZING → COMPLETE`.
 
-Dosya/isim güvenliği: `/`, `\`, `..`, null byte veya benzeri path traversal denemeleri `safeChildPath`
-tarafından reddedilir (400/404) — hedef dizinin dışına asla erişilmez.
+1. İsteğe bağlı **Oturum etiketi** girin. En fazla 40 karakter; harf, rakam, boşluk, `_` ve `-` desteklenir. API de bu sınırı uygular.
+2. **ARM · Hazırla** düğmesi kaydı hazırlar. Bu noktada veri kaydedilmez. **DISARM · İptal** ile beklemeye dönebilirsiniz.
+3. **Kaydı başlat** düğmesi tek bir oturum başlatır. Durum sunucudan onaylandıktan sonra **KAYDEDİLİYOR** görünür.
+4. Normal kayıt penceresi 90 saniyedir. **Durdur** düğmesi erken bitirir; duraklat/devam et yoktur.
+5. **PAKETLENİYOR** sırasında yeni kayıt veya durdurma komutu verilemez. **TAMAMLANDI** durumunda ham kayıt arşivde görünür; görsel paket hazırsa ayrıca belirtilir.
 
-Kayıt sunucusu kapalıyken panel "kayıt sunucusu kapalı (npm run panel)" mesajını gösterir.
+Zaman göstergesi sunucunun oturum başlangıç/bitiş zamanlarından hesaplanır. Sayfa kayıt ortasında yeniden açıldığında aynı oturum kimliği, etiketi ve zaman bilgisi alınır. Kayıt sırasında olay akışı susarsa sonlandırma zamanlayıcısı 90 saniyeye ek 5 saniyelik toleransla kaydı kapatır; dolayısıyla süre göstergesi 01:30'u kısa süre aşabilir.
 
-## 4. Canlı izolasyon (live seat isolation)
+Veri kartı, **kayda giren katılımcı**, **kaydedilen olay**, **alınan**, **hatalı**, **geç / erken**, **tekrar** sayılarını ayrı gösterir. Kayıt bittiğinde kart **SON OTURUM** olarak işaretlenir; eski sayılar yeni bir kayıt gibi sunulmaz.
 
-Canlı yayın (RECORDING) sırasında sahnedeki bir şeride (lane) tıklamak o katılımcıyı izole eder:
-disk üzerindeki `uSelLane` uniform'u set edilir, seat paneli o kişinin bölge/koltuk bilgisini
-(`laneMeta`den zone harfi + seat) ve canlı güncellenen olay sayısını gösterir.
+Panel durumunu yaklaşık saniyede bir, arşivi beş saniyede bir yeniler. Bağlantı yoksa kontroller kilitlenir, sayılar **SON BİLİNEN VERİ** olarak kalır ve yeniden deneme seçeneği gösterilir. Tarayıcı bağlantısının kaybolması sunucudaki kaydı durdurmaz. Bir komut zaman aşımına uğradığında komut sunucuya ulaşmış olabilir; tekrar denemeden önce güncel durumun doğrulanmasını bekleyin.
 
-**Esc** tuşu veya boş bir alana tıklamak seçimi temizler (`selectLive(null)` / `select(null)`,
-`e.key === 'Escape'` main.js'de dinleniyor).
+## 4. Görselleştirici
 
-## 5. Auto-attach
+- **Evren / Plak** aynı katılımcı verisinin farklı sunumlarıdır.
+- Oynatma, zaman çizelgesi ve hız kontrolü kayıtların zaman içindeki gelişimini gösterir.
+- Bir katılımcı izine tıklayın; katılımcı paneli bölge/koltuk ve olay bilgisini gösterir. **Esc** veya boş alana tıklamak seçimi temizler.
+- **Sahne modu** arayüzü gizler; **H** veya arayüzü göster düğmesi geri getirir.
+- **Görseli kaydet** eserin son hâlini 4096 × 4096 PNG olarak dışa aktarır.
 
-viz sayfası açılışta `GET /api/status`'u sorar; sunucu zaten **RECORDING** ise viz otomatik olarak
-canlı moda geçer ve aynı "attach" kod yolunu kullanır — hello mesajındaki güncel `roster`'dan sahneyi
-kurar (yeni bir take için ayrı roster broadcast'i beklemez, çünkü zaten devam eden bir oturuma
-katılıyordur). Bu sayede viz sayfası show ortasında yenilense/yeniden açılsa da kayıp yaşanmaz.
+Görselleştiricinin **Canlı kayıt** kontrolü aynı kayıt API'sini kullanır. Önce sunucu durumu okunur, yerel canlı SSE bağlantısı açılır, ardından arm/start akışı çalışır. Mevcut eser, sunucudan `RECORDING` onayı gelmeden kaldırılmaz. Sayfa açılışında sunucuda zaten kayıt sürüyorsa görselleştirici o kayda katılır; ikinci bir kayıt başlatmaz.
 
-## 6. Ortam değişkenleri
+Boşluk tuşu kaydı durdurmaz; oynatma kontrolleri arşiv içindir. Kayıt kontrolü klavyeyle odaklandığında Enter, düğmenin normal başlat/durdur eylemini uygular. Kayıt bittiğinde paketleme durumu görünür ve oluşan pakete geçilir. Paket yükleme başarısızsa hata görünür; önceki açılmış eser korunur.
 
-`.env` dosyası proje kökünde, `src/env.js`'deki `loadEnv()` ile okunur (CRLF satır sonları da
-desteklenir — `\r?\n` ile bölünür). `.env` yoksa gerçek `process.env` değişkenleri kullanılabilir.
+## 5. Arşiv ve kurtarma
 
-| Değişken | Zorunlu mu | Açıklama |
-|---|---|---|
-| `CS_EVENTS_URL` | Evet | Canlı SSE olay akışının URL'i (`src/sources/live-source.js`). |
-| `CS_EVENTS_AUTH` | `CS_EVENTS_TOKEN` yoksa evet | Basic auth kimlik bilgisi. |
-| `CS_EVENTS_TOKEN` | `CS_EVENTS_AUTH` yoksa evet | Bearer token. |
-| `PANEL_PORT` | Hayır | Kayıt sunucusu portu (varsayılan 8787). |
+Kayıt masasındaki **Oturumlar** listesi ham JSONL dosyalarını tarih, etiket, katılımcı, olay sayısı ve tamamlanma durumuyla gösterir. Aktif oturum indirme bağlantısı kayıt kapanana kadar sunulmaz. **Eksik oturum**, dosyanın tamamlanmış bir `end` satırı taşımadığını belirtir; bunu tamamlanmış gösteri kaydı olarak değerlendirmeyin.
 
-**AUTH vs TOKEN önceliği**: `CS_EVENTS_URL` ile birlikte `CS_EVENTS_AUTH` **veya** `CS_EVENTS_TOKEN`'dan
-en az biri zorunludur (`loadEnv` bunu doğrular, yoksa fırlatır). **İkisi de verilirse `CS_EVENTS_TOKEN`
-(Bearer) kazanır** ve `live-source.js` bunu bir kez `console.warn` ile bildirir:
-`"live-source: both CS_EVENTS_AUTH and CS_EVENTS_TOKEN are set — CS_EVENTS_TOKEN (Bearer) wins; unset
-the stale one"`. Show gecesi terminal loglarında bu satırı görürseniz `.env`'deki eski değeri silin.
+Görselleştiricinin **Kütüphane** panelinde:
 
-401/403 (kimlik doğrulama hatası) yeniden denenmez sonsuza kadar: bir kez tekrar denenir, yine
-başarısız olursa `SSE auth failed (HTTP 401): check CS_EVENTS_AUTH / CS_EVENTS_TOKEN` hatasıyla
-durur — sessiz sonsuz döngü yerine net teşhis.
+- Paketler açılabilir ve silinebilir.
+- Paketlenmemiş ham oturumlar yeniden paketlenebilir veya silinebilir.
+- Silme iki tıklama gerektirir; ilk tıklamadan sonraki dört saniye içinde ikinci tıklama işlemi uygular.
+- Aktif veya paketlenmekte olan oturum sunucu tarafından silmeye ve tekrar paketlemeye karşı korunur (`409`).
 
-## 7. Bilinen sınırlar
+**Kayıt hatası** ile **paketleme hatası** ayrıdır. Paketleme başarısız olsa da başarıyla kapanan ham JSONL diskte kalır. Kütüphaneden yeniden paketleyebilir veya şu komutu kullanabilirsiniz:
 
-- **90 saniyelik tek atımlık kayıt**: `durationMs` varsayılan 90000 ms; bu bir show artifact'ıdır,
-  duraklat/devam et yoktur. Stream sessiz kalsa bile wall-clock zamanlayıcı (`durationMs + 5000`)
-  oturumu zorla kapatır.
-- **derived-roster replay buffer sınırı 400.000 olay**: `viz/src/main.js` içinde canlı roster geç
-  geldiğinde (derived roster) tutulan replay buffer 400.000 olayı aşarsa atılır ve
-  `live.rosterDerived = false` olur — çok uzun/çok yoğun bir açılış gecikmesinde en eski canlı veri
-  kaybolabilir (yeniden türetme devre dışı kalır, ama akış durmaz).
-- **spare lane sayısı 64/256**: sahne düzeni (`rosterLayout`) roster sunucudan gecikmeli/türetilmiş
-  (derived) geldiyse 256, taze bir roster snapshot'ı ile kurulduysa 64 yedek şerit (spare lane) ayırır.
-  Bu sınırı aşan geç katılımcılar sessizce görünmez olmaz — `live.dropped` sayacı artar ve kayıt
-  istatistik satırında yüzeye çıkar ("spare band full").
-- **FINALIZING için ayrı bir broadcast yoktur şeklinde bir kısıtlama YOKTUR** — düzeltildi: sunucu artık
-  `RECORDING → FINALIZING → COMPLETE` geçişlerinin her birinde `broadcast({kind:'state', state:...})`
-  gönderir; viz bu durumu "■ PAKETLENIYOR…" olarak gösterir. (Bilinen sınırlardan biri: FINALIZING
-  anındaki `status()` yalnız `finalizingSessionId/stats/participants` anlık görüntüsünü taşır — tam
-  session nesnesi bu noktada artık bellekte tutulmaz, bu kasıtlıdır çünkü ~600 MB'lık canlı event
-  store'u boşta tutmak istenmez.)
-- **Kayıt sunucusu sadece loopback'e bağlıdır** (`127.0.0.1`) — venue LAN'ından erişilemez; operatör
-  masasındaki tarayıcı doğrudan aynı makinede olmalı.
-- **Aktif oturum silinemez/paketlenemez**: kayıt devam ederken (`current`) veya paketlenirken
-  (`finalizing`) o dosyaya `DELETE`/`POST /api/pack` çağrısı 409 döner.
-- **Paket silme sadece dizinleri kaldırır**: `DELETE /api/packs/<isim>` yalnızca bir dizin (pack) ise
-  çalışır; `index.json` gibi tekil dosyalar bu yoldan silinemez.
-- **Label sanitizasyonu kayıptır**: 40 karakteri aşan veya izin verilmeyen karakter içeren etiketler
-  kırpılır/temizlenir — orijinal metin geri getirilemez.
-</content>
+```sh
+npm run viz:pack -- sessions/<oturum>.jsonl viz/public/packs/<paket>
+```
+
+Paketleyici `manifest.json`, ikili veri dosyaları ve `index.json` üretir. Dizin düzeyindeki index atomik yazılır. Görselleştiricide paket görünmüyorsa `sessions/<oturum>.jsonl → viz/public/packs/<paket>/manifest.json → viz/public/packs/index.json` zincirini kontrol edin. Yeni paketler için Vite'ı yeniden başlatmak gerekmez.
+
+## 6. Veri ve işletim sınırları
+
+- `.env`, `sessions/`, `captures/*.raw`, `viz/public/packs/` ve `dist-viz/` Git dışında tutulur. Dosya paylaşımı veya dağıtımı öncesi hedef içeriğini kontrol edin.
+- Ham kayıt, görsel paketten bağımsızdır. Ham JSONL yedeğini performans sonrası ayrıca alın.
+- Panel `127.0.0.1`'e bağlıdır; venue LAN'ından erişilmez. Dış ağa yayınlamak bu yerel çalıştırma akışının parçası değildir.
+- Canlı görselleştirmede geç katılımcılar için sınırlı yedek şerit vardır: snapshot roster için 64, türetilmiş roster için 256. Kapasite dolduğunda `dropped` sayacı artar.
+- Roster geç geldiğinde tutulan canlı replay buffer 400.000 olayla sınırlıdır. Görselleştirici arabelleği, ham kayıt deposundan ayrıdır.
+- Duran bir canlı izleyicinin çıkış tamponu 4 MiB sınırını aşarsa o istemci düşürülür; yeniden bağlanabilir.
+- Testler fixture ve yerel sunucularla çalışır. Test/build başarısı gerçek upstream bağlantısı, venue yükü veya hedef GPU'da gösteri kabulü anlamına gelmez.
+
+Geliştirme doğrulaması: `npm run check`. Uygulama kaynak haritası ve diğer komutlar için [README](../README.md).

@@ -3,7 +3,7 @@
 // 4096x4096 target and hands the viewer a PNG — print/archive quality.
 import * as THREE from 'three';
 
-export function exportStill({ renderer, scene, uniforms, playheadMat = null, sessionId, size = 4096 }) {
+export async function exportStill({ renderer, scene, uniforms, playheadMat = null, sessionId, size = 4096 }) {
   const camera = new THREE.OrthographicCamera(-1.02, 1.02, 1.02, -1.02, -10, 10);
   camera.position.z = 1;
 
@@ -14,14 +14,14 @@ export function exportStill({ renderer, scene, uniforms, playheadMat = null, ses
   const prevReplaying = uniforms.uReplaying.value;
   const prevMax = uniforms.uPointMax.value;
   const prevPlayhead = playheadMat ? playheadMat.opacity : 0;
+  const prevTarget = renderer.getRenderTarget();
   uniforms.uTime.value = uniforms.uDuration.value;
   uniforms.uPointScale.value = size / 2.04;
   uniforms.uSelLane.value = -1;
   // finished-state render: no fresh-glow wedge, no playhead ray in the archive
   uniforms.uReplaying.value = 0;
-  // scale the point-size cap with the target so marks keep their on-screen
-  // proportion (8px cap at ~screen scale -> ~24px at 4096)
-  uniforms.uPointMax.value = size / 170;
+  // Preserve the current renderer's luminous-core proportions at print size.
+  uniforms.uPointMax.value = Math.max(prevMax, prevMax * (size / 2.04) / Math.max(1, prevScale));
   if (playheadMat) playheadMat.opacity = 0;
 
   const pixels = new Uint8Array(size * size * 4);
@@ -32,7 +32,7 @@ export function exportStill({ renderer, scene, uniforms, playheadMat = null, ses
   } finally {
     // a throw (e.g. context loss allocating the 4096² MSAA target) must never
     // leave the live view stuck with forced export uniforms
-    renderer.setRenderTarget(null);
+    renderer.setRenderTarget(prevTarget);
     target.dispose();
     uniforms.uTime.value = prevTime;
     uniforms.uPointScale.value = prevScale;
@@ -53,11 +53,13 @@ export function exportStill({ renderer, scene, uniforms, playheadMat = null, ses
   }
   ctx.putImageData(image, 0, 0);
 
-  canvas.toBlob((blob) => {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `2000-traces-${sessionId}-${size}px.png`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-  }, 'image/png');
+  const blob = await new Promise((resolve, reject) => canvas.toBlob(
+    (value) => value ? resolve(value) : reject(new Error('PNG oluşturulamadı. Yeniden deneyin.')), 'image/png',
+  ));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `2000-traces-${sessionId}-${size}px.png`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  return { width: size, height: size, bytes: blob.size };
 }

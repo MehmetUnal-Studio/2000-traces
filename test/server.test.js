@@ -10,6 +10,58 @@ import { fileSource } from '../src/sources/file-source.js';
 
 const FIXTURE = new URL('../captures/fixture-small.sse.txt', import.meta.url).pathname;
 
+test('operator assets are available without starting a recording or exposing source files', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'traces-panel-'));
+  let sourceCalls = 0;
+  const srv = createControlServer({ sessionsDir: dir, sourceFactory: () => { sourceCalls++; return fileSource(FIXTURE); } });
+  await srv.listen(0);
+  t.after(() => srv.close());
+  const base = `http://127.0.0.1:${srv.port()}`;
+  for (const [path, type] of [['/', 'text/html'], ['/panel.js', 'text/javascript'], ['/panel.css', 'text/css']]) {
+    const response = await fetch(`${base}${path}`);
+    assert.equal(response.status, 200);
+    assert.ok(response.headers.get('content-type').startsWith(type));
+    assert.ok((await response.text()).length > 0);
+  }
+  assert.equal((await fetch(`${base}/src/server.js`)).status, 404);
+  const response = await fetch(`${base}/api/status`);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  const state = await response.json();
+  assert.equal(state.state, 'IDLE');
+  assert.equal(state.startedAtLocalMs, null);
+  assert.equal(state.endedAtLocalMs, null);
+  assert.equal(state.label, '');
+  assert.equal(sourceCalls, 0, 'opening or refreshing the operator UI must not connect upstream');
+});
+
+test('status restores the active take label and timing after a page refresh', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'traces-panel-timing-'));
+  async function* source(signal) {
+    yield { raw: { t: 1, z: 0, s: 1, l: 3, f: 0, uu: 0.5, vv: 0.5, ts: 1000 }, arrivalMs: Date.now() };
+    while (!signal.aborted) await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  const srv = createControlServer({ sessionsDir: dir, sourceFactory: source, durationMs: 1000 });
+  await srv.listen(0);
+  const base = `http://127.0.0.1:${srv.port()}`;
+  t.after(async () => { await fetch(`${base}/api/stop`, { method: 'POST' }); await srv.close(); });
+  await fetch(`${base}/api/arm`, { method: 'POST' });
+  await fetch(`${base}/api/start`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: 'Gala prova 01' }) });
+  const active = await getStatus(base);
+  assert.equal(active.state, 'RECORDING');
+  assert.equal(active.label, 'Gala prova 01');
+  assert.ok(Number.isFinite(active.startedAtLocalMs));
+  assert.equal(active.endedAtLocalMs, null);
+  const refreshed = await getStatus(base);
+  assert.equal(refreshed.sessionId, active.sessionId);
+  assert.equal(refreshed.startedAtLocalMs, active.startedAtLocalMs);
+  await fetch(`${base}/api/stop`, { method: 'POST' });
+  const complete = await waitState(base, 'COMPLETE');
+  assert.equal(complete.state, 'COMPLETE');
+  assert.equal(complete.label, active.label);
+  assert.equal(complete.startedAtLocalMs, active.startedAtLocalMs);
+  assert.ok(complete.endedAtLocalMs >= active.startedAtLocalMs);
+});
+
 test('arm/start/stop lifecycle over HTTP', async (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'traces-'));
   const srv = createControlServer({ sessionsDir: dir, sourceFactory: () => fileSource(FIXTURE) });

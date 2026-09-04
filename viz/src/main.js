@@ -7,22 +7,30 @@ import { createScene } from './scene.js';
 import { createTransport } from './transport.js';
 import { createHud, updateZoneLabels } from './hud.js';
 import { exportStill } from './export-still.js';
+import { createDemoPack, DEMO_NAME } from './demo-pack.js';
+import { unprojectTracePoint } from './cosmic-projection.js';
 
 const RECORDER = 'http://127.0.0.1:8787';
 const EMPTY_LIBRARY_MSG = 'henüz kayıt yok — ● KAYIT ile başla';
+// A disconnected local service must settle every action and watchdog probe.
+const recorderFetch = (path, options = {}) => fetch(`${RECORDER}${path}`, {
+  ...options, signal: options.signal ?? AbortSignal.timeout(8000),
+});
+let packEntries = [];
 
 async function fetchPacks() {
   try {
-    const r = await fetch('/packs/index.json');
+    const r = await fetch('/packs/index.json', { signal: AbortSignal.timeout(5000) });
     if (!r.ok) return [];
     // Vite's SPA fallback serves index.html with 200 for missing paths
     if (!(r.headers.get('content-type') ?? '').includes('json')) return [];
     const d = await r.json();
-    return d?.packs?.length ? d.packs.map((p) => p.name) : [];
+    packEntries = Array.isArray(d?.packs) ? d.packs.filter((p) => typeof p?.name === 'string' && p.name) : [];
+    return packEntries.map((p) => p.name);
   } catch { return []; }
 }
 
-let PACKS = await fetchPacks();
+let PACKS = [];
 
 const canvas = document.getElementById('c');
 const view = createScene(canvas);
@@ -31,6 +39,9 @@ let current = null; // pack mode: { name, pack, layout, disc, transport }
 let live = null;    // record mode: { es, disc, layout, laneOf, maxT, queue, durationMs, ... }
 let recPending = false; // set synchronously on KAYIT click, before any await
 let switchGen = 0;      // invalidates in-flight switchPack loads
+let packAbort = null;
+let viewMode = 'galaxy';
+let playbackSpeed = 1;
 
 const hud = createHud({
   packs: PACKS,
@@ -41,18 +52,39 @@ const hud = createHud({
     t.playing ? t.pause() : t.play();
   },
   onSeek: (ms) => { if (current) { current.transport.pause(); current.transport.seek(ms); } },
-  onSpeed: (s) => current?.transport.setSpeed(s),
+  onSpeed: (s) => { playbackSpeed = s; current?.transport.setSpeed(s); },
   onFinal: () => current?.transport.toEnd(),
   onRestart: () => current?.transport.restart(),
-  onExport: () => current && exportStill({
-    renderer: view.renderer, scene: view.scene,
-    uniforms: current.disc.uniforms, playheadMat: current.disc.playheadMat,
-    sessionId: current.pack.manifest.sessionId,
-  }),
+  onExport: () => {
+    if (!current) throw new Error('Önce dışa aktarılacak bir eser açın.');
+    return exportStill({
+      renderer: view.renderer, scene: view.scene,
+      uniforms: current.disc.uniforms, playheadMat: current.disc.playheadMat,
+      sessionId: current.pack.manifest.sessionId,
+    });
+  },
   onFit: () => view.fit(),
   onDeselect: () => (live ? selectLive(null) : select(null)),
   onRecord: () => (live ? stopRecording() : startRecording()),
   onLibrary: () => toggleLibrary(),
+  onDemo: () => switchPack(DEMO_NAME),
+  onViewMode: (mode) => {
+    viewMode = mode;
+    current?.disc.setViewMode?.(mode);
+    live?.disc?.setViewMode?.(mode);
+    hud.setViewMode(mode);
+  },
+});
+const syncPacks = (selected) => hud.setPacks(PACKS.map((name) => packEntries.find((p) => p.name === name) ?? name), selected);
+
+canvas.addEventListener('webglcontextlost', (event) => {
+  event.preventDefault();
+  current?.transport.pause();
+  hud.setStats('Grafik bağlantısı kesildi. Görüntü kurtarılana kadar bekleyin; canlı kayıt durumunu operatör panelinden izleyebilirsiniz.');
+});
+canvas.addEventListener('webglcontextrestored', () => {
+  lastRenderStamp = null;
+  hud.setStats('Grafik bağlantısı yeniden kuruldu.');
 });
 
 // ------------------------------------------------------------------ library
@@ -74,7 +106,7 @@ async function refreshLibrary() {
   if (!hud.isLibraryOpen()) return;
   let lib = null;
   try {
-    const r = await fetch(`${RECORDER}/api/library`);
+    const r = await recorderFetch(`/api/library`);
     if (!r.ok) throw new Error('library');
     lib = await r.json();
   } catch { /* recorder offline */ }
@@ -83,15 +115,15 @@ async function refreshLibrary() {
   hud.renderLibrary(lib, {
     onOpen: (name) => switchPack(name),
     onDeletePack: (name) => libraryOp(
-      () => fetch(`${RECORDER}/api/packs/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+      () => recorderFetch(`/api/packs/${encodeURIComponent(name)}`, { method: 'DELETE' }),
       { deletedPack: name },
     ),
-    onPackSession: (file) => libraryOp(() => fetch(`${RECORDER}/api/pack`, {
+    onPackSession: (file) => libraryOp(() => recorderFetch(`/api/pack`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ file }),
     })),
     onDeleteSession: (file) => libraryOp(
-      () => fetch(`${RECORDER}/api/sessions/${encodeURIComponent(file)}`, { method: 'DELETE' }),
+      () => recorderFetch(`/api/sessions/${encodeURIComponent(file)}`, { method: 'DELETE' }),
     ),
   });
 }
@@ -112,14 +144,15 @@ async function libraryOp(fn, { deletedPack = null } = {}) {
       }
     } catch { err = 'kayıt sunucusuna ulaşılamadı'; }
     PACKS = await fetchPacks();
-    hud.setPacks(PACKS, current?.name && PACKS.includes(current.name) ? current.name : undefined);
+    syncPacks(current?.name);
     refreshLibrary();
     if (err) { hud.setStats(`işlem başarısız — ${err}`); return; }
     if (deletedPack && current?.name === deletedPack) {
       if (PACKS.length) await switchPack(PACKS[0], 'açık paket silindi');
       else {
         clearStage();
-        hud.setPacks(PACKS);
+        hud.setEmpty();
+        syncPacks();
         hud.setStats(`açık paket silindi · ${EMPTY_LIBRARY_MSG}`);
         hud.showSeat(null);
       }
@@ -181,12 +214,17 @@ function applyLiveSel() {
 }
 
 view.onCanvasClick((x, y) => {
-  if (live?.disc) { selectLive(live.layout.pickLane(x, y)); return; }
+  const point = unprojectTracePoint(x, y, viewMode === 'record' ? 0 : 1);
+  if (live?.disc) { selectLive(live.layout.pickLane(point.x, point.y)); return; }
   if (!current) return;
-  select(current.layout.pickLane(x, y));
+  select(current.layout.pickLane(point.x, point.y));
 });
 
 window.addEventListener('keydown', (e) => {
+  // Space is reserved for replay, including when Tab focuses record controls.
+  if (e.key === ' ' && e.target.closest?.('#rec')) { e.preventDefault(); return; }
+  if (e.target.closest?.('input, select, textarea, button, a, [contenteditable="true"]')) return;
+  if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
   if (e.key === 'Escape') (live ? selectLive(null) : select(null));
   if (e.key === ' ') {
     // Space must NEVER reach a focused button — during a live take it would
@@ -207,34 +245,49 @@ async function switchPack(name, notice = null) {
   if (live || recPending) return; // recording owns the stage
   if (!name) { hud.setStats(EMPTY_LIBRARY_MSG); return; }
   const gen = ++switchGen; // any older in-flight load is now void
-  clearStage();
+  packAbort?.abort();
+  packAbort = new AbortController();
+  hud.setLoading(true, 'Eser yükleniyor');
   hud.setStats('yükleniyor…');
   const stale = () => gen !== switchGen || live || recPending;
   let pack;
   try {
-    pack = await loadPack(name);
+    pack = name === DEMO_NAME ? createDemoPack() : await loadPack(name, undefined, { signal: packAbort.signal });
   } catch {
     await new Promise((r) => setTimeout(r, 600)); // dev server may be settling
     if (stale()) return;
-    try { pack = await loadPack(name); }
+    try { pack = name === DEMO_NAME ? createDemoPack() : await loadPack(name, undefined, { signal: packAbort.signal }); }
     catch (err) {
-      if (!stale()) hud.setStats(`paket yüklenemedi: ${name} — ${err?.message ?? err}`);
+      if (!stale()) {
+        hud.setLoading(false);
+        if (current) hud.setPack(current.name);
+        hud.setStats(`paket yüklenemedi: ${name} — ${err?.message ?? err}`);
+      }
       return;
     }
   }
   if (stale()) return; // an overlapping switch/recording won — no GPU built yet
-  const layout = buildLayout(pack.manifest);
-  const disc = buildDisc(pack, layout);
+  let layout; let disc;
+  try {
+    layout = buildLayout(pack.manifest);
+    disc = buildDisc(pack, layout);
+  } catch (err) {
+    hud.setLoading(false);
+    hud.setStats(`Eser oluşturulamadı — ${err.message}`);
+    return;
+  }
+  clearStage();
+  disc.setViewMode?.(viewMode);
   const transport = createTransport(pack.manifest.durationMs);
+  transport.setSpeed(playbackSpeed);
   view.scene.add(disc.group);
   current = { name, pack, layout, disc, transport };
+  lastRenderStamp = null;
   hud.setPack(name);
   hud.setDuration(pack.manifest.durationMs);
-  hud.setStats(
-    `${pack.manifest.laneCount} katılımcı · ${pack.manifest.eventCount.toLocaleString('tr-TR')} olay · ` +
-    `${pack.manifest.strokeCount.toLocaleString('tr-TR')} vuruş · seed ${pack.manifest.visualSeed}` +
-    (notice ? ` · ${notice}` : ''),
-  );
+  hud.setArtwork(pack.manifest, { demo: name === DEMO_NAME });
+  hud.setLoading(false);
+  hud.setStats(notice ?? '');
   select(null);
 }
 
@@ -247,15 +300,18 @@ async function startRecording() {
   if (live || recPending) return; // synchronous re-entry guard (double-click)
   recPending = true;
   ++switchGen; // void any in-flight pack load
+  packAbort?.abort();
+  hud.setLoading(false);
   hud.setRecState('● BAĞLANIYOR…', true);
   let st;
   try {
-    const r = await fetch(`${RECORDER}/api/status`);
+    const r = await recorderFetch(`/api/status`);
     if (!r.ok) throw new Error('status');
     st = await r.json();
   } catch {
     recPending = false;
     hud.setRecState('● KAYIT', false);
+    hud.setConnection('offline');
     hud.setStats('kayıt sunucusu kapalı — önce çalıştır: npm run panel');
     return;
   }
@@ -282,28 +338,36 @@ async function startRecording() {
   hud.showSeat(null);
   const es = new EventSource(`${RECORDER}/api/live`);
   live.es = es;
-  es.onopen = () => { if (live) { live.staleSince = null; } };
+  const activeTake = live;
+  es.onopen = () => { if (live === activeTake) { live.staleSince = null; } };
   es.onmessage = (m) => {
-    if (!live) return;
+    if (live !== activeTake) return;
     live.staleSince = null;
-    handleLive(JSON.parse(m.data));
+    try {
+      handleLive(JSON.parse(m.data)).catch(() => {
+        if (live === activeTake) exitLive('Canlı görünüm güncellenemedi. Kayıt durumunu operatör panelinden kontrol edin.');
+      });
+    } catch {
+      hud.setStats('Canlı görünümde geçersiz mesaj alındı; yeniden bağlantı bekleniyor.');
+    }
   };
   es.onerror = () => {
     // EventSource auto-reconnects; mark stale and let the watchdog decide.
-    if (live && live.staleSince === null) live.staleSince = performance.now();
+    if (live === activeTake && live.staleSince === null) live.staleSince = performance.now();
   };
   // Watchdog: a dead recorder must never brick the page mid-live.
   live.watchdog = setInterval(async () => {
-    if (!live) return;
+    if (live !== activeTake || activeTake.probing) return;
+    activeTake.probing = true;
     try {
-      const r = await fetch(`${RECORDER}/api/status`);
+      const r = await recorderFetch(`/api/status`);
       if (!r.ok) throw new Error('status');
-      if (live) live.failedProbes = 0;
+      if (live === activeTake) live.failedProbes = 0;
     } catch {
-      if (!live) return;
+      if (live !== activeTake) return;
       live.failedProbes += 1;
       if (live.failedProbes >= 2) exitLive('kayıt sunucusuna ulaşılamadı — kayıt yarıda kesildi');
-    }
+    } finally { activeTake.probing = false; }
   }, 5000);
 }
 
@@ -314,12 +378,12 @@ async function beginTake(helloState) {
   try {
     if (live.cancelling) { exitLive(null); return; }
     if (helloState !== 'ARMED') {
-      const r = await fetch(`${RECORDER}/api/arm`, { method: 'POST' });
+      const r = await recorderFetch(`/api/arm`, { method: 'POST' });
       if (!r.ok) throw new Error('arm');
       if (!live) return;
       if (live.cancelling) { await disarmQuietly(); exitLive(null); return; }
     }
-    const r2 = await fetch(`${RECORDER}/api/start`, { method: 'POST' });
+    const r2 = await recorderFetch(`/api/start`, { method: 'POST' });
     if (!r2.ok) throw new Error('start');
     // confirmation arrives as the RECORDING state broadcast
   } catch {
@@ -333,8 +397,8 @@ async function beginTake(helloState) {
 async function disarmQuietly() {
   // /api/arm toggles: a second arm while ARMED disarms. Best effort.
   try {
-    const st = await (await fetch(`${RECORDER}/api/status`)).json();
-    if (st.state === 'ARMED') await fetch(`${RECORDER}/api/arm`, { method: 'POST' });
+    const st = await (await recorderFetch(`/api/status`)).json();
+    if (st.state === 'ARMED') await recorderFetch(`/api/arm`, { method: 'POST' });
   } catch { /* server unreachable — nothing to disarm */ }
 }
 
@@ -344,7 +408,7 @@ async function stopRecording() {
   hud.setRecState('■ DURDURULUYOR…', true);
   if (!live.started) live.cancelling = true; // suppress a pending arm/start
   let res = null;
-  try { res = await fetch(`${RECORDER}/api/stop`, { method: 'POST' }); }
+  try { res = await recorderFetch(`/api/stop`, { method: 'POST' }); }
   catch { /* server unreachable */ }
   if (!live) return;
   if (res?.ok) {
@@ -365,7 +429,7 @@ async function stopRecording() {
   if (res && !res.ok) {
     // mid-take refusal: the take may have just ended on its own (finalizing)
     try {
-      const st = await (await fetch(`${RECORDER}/api/status`)).json();
+      const st = await (await recorderFetch(`/api/status`)).json();
       if (st.state === 'FINALIZING' || st.state === 'COMPLETE') {
         hud.setRecState('■ PAKETLENIYOR…', true);
         return; // COMPLETE broadcast will land shortly
@@ -377,7 +441,7 @@ async function stopRecording() {
   // fetch itself failed — could be a transient blip, not a dead server:
   // probe status once (the watchdog's standard of proof) before tearing down
   try {
-    const st = await (await fetch(`${RECORDER}/api/status`)).json();
+    const st = await (await recorderFetch(`/api/status`)).json();
     if (!live) return;
     if (st.state === 'FINALIZING' || st.state === 'COMPLETE') {
       hud.setRecState('■ PAKETLENIYOR…', true);
@@ -386,7 +450,7 @@ async function stopRecording() {
     if (st.state === 'RECORDING' || st.state === 'ARMED') {
       // server alive, stop lost in transit: retry once
       try {
-        const r2 = await fetch(`${RECORDER}/api/stop`, { method: 'POST' });
+        const r2 = await recorderFetch(`/api/stop`, { method: 'POST' });
         if (r2.ok || live?.cancelling) return; // COMPLETE follows / cancel flag holds
       } catch { /* fall through to teardown */ }
     }
@@ -418,6 +482,8 @@ function ensureLiveDisc(roster, { derived = false } = {}) {
   live.rosterDerived = derived;
   live.replayBuf = derived ? [] : null; // kept so a genuine roster can rebuild
   live.disc = createLiveDisc(layout, { visualSeed: live.visualSeed ?? 1 });
+  live.disc.setViewMode?.(viewMode);
+  hud.setArtwork({ laneCount: roster.length, eventCount: 0, durationMs: live.durationMs, label: 'Canlı kayıt' });
   view.scene.add(live.disc.group);
   applyLiveSel(); // a (z,s) isolation must survive the disc (re)build
   if (live.queue.length) processLiveEvents(live.queue.splice(0));
@@ -521,7 +587,7 @@ async function handleLive(msg) {
       }
       PACKS = await fetchPacks();
       if (!PACKS.includes(packName)) PACKS.push(packName);
-      hud.setPacks(PACKS, packName);
+      syncPacks(packName);
       await switchPack(packName);
       refreshLibrary(); // a finished take is new library content
     } else if (msg.state === 'IDLE' && msg.error) {
@@ -533,7 +599,7 @@ async function handleLive(msg) {
 // The operator cancelled but the take started anyway (stop lost the race):
 // stop it now that the server is provably recording.
 function stopRecordingConfirmed() {
-  fetch(`${RECORDER}/api/stop`, { method: 'POST' }).catch(() => {});
+  recorderFetch(`/api/stop`, { method: 'POST' }).catch(() => {});
   hud.setRecState('■ DURDURULUYOR…', true);
 }
 
@@ -545,6 +611,7 @@ function stopLiveUi(err) {
   live = null;
   hud.setLiveMode(false);
   hud.setRecState('● KAYIT', false);
+  if (!current) hud.setEmpty();
   if (err) hud.setStats(err);
 }
 
@@ -559,20 +626,37 @@ const projectToScreen = (x, y) => {
 };
 
 let prev = performance.now();
+let lastMetrics = 0;
+let lastRenderStamp = null;
+function renderIfChanged(contentStamp) {
+  const c = view.camera;
+  const stamp = `${contentStamp}|${c.position.x}|${c.position.y}|${c.zoom}|${canvas.width}|${canvas.height}|${viewMode}`;
+  if (stamp === lastRenderStamp) return;
+  lastRenderStamp = stamp;
+  view.renderer.render(view.scene, c);
+}
 function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(100, now - prev);
   prev = now;
   const px = view.pixelsPerWorldUnit();
   const devicePx = px * view.renderer.getPixelRatio();
+  hud.labelLayer.hidden = viewMode === 'galaxy' || (!live?.disc && !current);
 
   if (live?.disc) {
     const d = live.disc;
     d.uniforms.uTime.value = live.maxT;
     d.uniforms.uPointScale.value = devicePx;
     d.playheadMat.opacity = 0.55;
-    d.playhead.rotation.z = -(2 * Math.PI * live.maxT) / live.durationMs;
+    d.updatePlayhead?.(live.maxT);
     hud.setTime(live.maxT, true);
+    if (now - lastMetrics > 250) {
+      lastMetrics = now;
+      hud.setLiveMetrics?.({
+        participants: live.laneMeta.filter(Boolean).length,
+        events: live.laneEvents.reduce((sum, n) => sum + n, 0),
+      });
+    }
     if (live.sel) {
       // live-updating event count for the isolated seat, DOM-churn-free
       const lane = d.uniforms.uSelLane.value;
@@ -598,12 +682,12 @@ function frame(now) {
         true,
       );
     }
-    updateZoneLabels(hud.labelLayer, live.layout, projectToScreen, px);
-    view.renderer.render(view.scene, view.camera);
+    if (viewMode === 'record') updateZoneLabels(hud.labelLayer, live.layout, projectToScreen, px);
+    renderIfChanged(`live:${d.group.uuid}:${live.maxT}:${d.grainCount()}:${d.uniforms.uSelLane.value}`);
     return;
   }
 
-  if (!current) return;
+  if (!current) { renderIfChanged('ambient'); return; }
   const { disc, transport, layout } = current;
   transport.tick(dt);
   disc.uniforms.uTime.value = transport.time;
@@ -612,11 +696,11 @@ function frame(now) {
   const replaying = transport.time < layout.durationMs;
   disc.uniforms.uReplaying.value = replaying ? 1 : 0;
   disc.playheadMat.opacity = replaying ? 0.55 : 0;
-  disc.playhead.rotation.z = -(2 * Math.PI * transport.time) / layout.durationMs;
+  disc.updatePlayhead?.(transport.time);
 
   hud.setTime(transport.time, transport.playing);
-  updateZoneLabels(hud.labelLayer, layout, projectToScreen, px);
-  view.renderer.render(view.scene, view.camera);
+  if (viewMode === 'record') updateZoneLabels(hud.labelLayer, layout, projectToScreen, px);
+  renderIfChanged(`${disc.group.uuid}:${transport.time}:${disc.uniforms.uSelLane.value}`);
 }
 
 // Boot: if the recorder is already mid-take, auto-attach through the exact
@@ -624,12 +708,18 @@ function frame(now) {
 // SSE tap, and the hello's state:RECORDING takes the attach branch).
 async function boot() {
   requestAnimationFrame(frame); // frame() no-ops until a disc exists
+  PACKS = await fetchPacks();
+  syncPacks();
+  if (new URLSearchParams(location.search).get('demo') === '1') { await switchPack(DEMO_NAME); return; }
   try {
-    const r = await fetch(`${RECORDER}/api/status`);
-    if (r.ok && (await r.json()).state === 'RECORDING') { startRecording(); return; }
-  } catch { /* recorder offline: normal pack-mode boot */ }
+    const r = await recorderFetch(`/api/status`, { signal: AbortSignal.timeout(3000) });
+    if (r.ok) {
+      hud.setConnection('ready');
+      if ((await r.json()).state === 'RECORDING') { startRecording(); return; }
+    } else hud.setConnection('offline');
+  } catch { hud.setConnection('offline'); }
   if (PACKS.length) await switchPack(PACKS[0]);
-  else hud.setStats(EMPTY_LIBRARY_MSG); // fresh install: idle state, no errors
+  else await switchPack(DEMO_NAME); // fresh install has a clearly labeled, local study
 }
 boot();
 

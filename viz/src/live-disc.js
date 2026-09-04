@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { DISC_VERTEX, POINT_FRAGMENT } from './shaders.js';
 import { mulberry32 } from './prng.js';
-import { lineColors, laneBoost, buildFrame, buildPlayhead } from './disc.js';
+import { lineColors, laneBoost, densityExposure, buildFrame, buildPlayhead } from './disc.js';
 
 const CHUNK = 1 << 17; // 131,072 grains per buffer
 
@@ -17,8 +17,10 @@ export function createLiveDisc(layout, { visualSeed = 1 } = {}) {
     uReplaying: { value: 1 },
     uSelLane: { value: -1 },
     uPointScale: { value: 400 },
-    uPointMax: { value: 8 },
+    uPointMax: { value: 32 },
     uLaneBoost: { value: laneBoost(layout.laneRadius.length) },
+    uDensity: { value: 1 },
+    uMorph: { value: 1 },
     uLineColors: { value: lineColors() },
   };
   const material = new THREE.ShaderMaterial({
@@ -27,12 +29,21 @@ export function createLiveDisc(layout, { visualSeed = 1 } = {}) {
   });
 
   const group = new THREE.Group();
-  group.add(buildFrame(layout));
-  const { playhead, playheadMat } = buildPlayhead(layout);
+  const frame = buildFrame(layout);
+  frame.visible = false;
+  group.add(frame);
+  const { playhead, playheadMat, updatePlayhead: updateCurve } = buildPlayhead(layout);
   group.add(playhead);
+  const updatePlayhead = (time) => updateCurve(time, uniforms.uMorph.value);
+  const setMorph = (morph) => {
+    uniforms.uMorph.value = Math.max(0, Math.min(1, Number(morph) || 0));
+    frame.visible = uniforms.uMorph.value < 0.5;
+    updatePlayhead(uniforms.uTime.value);
+  };
+  const setViewMode = (mode) => setMorph(mode === 'record' ? 0 : 1);
 
   const rand = mulberry32((visualSeed >>> 0) || 1);
-  const dispScale = layout.laneWidth * 0.85;
+  const dispScale = layout.laneWidth * 0.46;
   const chunks = [];
   let grainCount = 0;
 
@@ -56,11 +67,12 @@ export function createLiveDisc(layout, { visualSeed = 1 } = {}) {
   };
 
   return {
-    group, uniforms, playhead, playheadMat,
+    group, uniforms, playhead, playheadMat, setMorph, setViewMode, updatePlayhead,
     grainCount: () => grainCount,
 
     // ev: {t (tMs), k (type code), l (line), v (0-1)}; lane already resolved
     append(lane, ev) {
+      if (!Number.isInteger(lane) || lane < 0 || lane >= layout.laneRadius.length) return;
       if (ev.k !== 1 && ev.k !== 3) return; // grains: noteOn + motion only
       let chunk = chunks[chunks.length - 1];
       if (!chunk || chunk.count === CHUNK) chunk = newChunk();
@@ -82,6 +94,7 @@ export function createLiveDisc(layout, { visualSeed = 1 } = {}) {
     // r185's WebGLAttributes.updateBuffer merges the listed ranges, uploads
     // them, then clears the list itself after the upload).
     commit() {
+      uniforms.uDensity.value = densityExposure(grainCount);
       for (const chunk of chunks) {
         if (chunk.dirtyFrom >= chunk.count) continue;
         for (const attr of Object.values(chunk.attrs)) {

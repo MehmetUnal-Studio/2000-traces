@@ -1,214 +1,377 @@
-// viz/src/hud.js
-// Minimal operator chrome around the artwork. Show mode ('H') hides all of it.
-const fmt = (ms) => `${Math.floor(ms / 1000)}.${Math.floor((ms % 1000) / 100)}s`;
+// Museum chrome around the artwork. All recording operations are delegated to
+// the recorder state machine; the interface never starts or stops a take itself.
+const number = (value) => Number.isFinite(Number(value)) ? Number(value).toLocaleString('tr-TR') : '—';
+const clock = (ms) => {
+  const seconds = Math.floor(Math.max(0, Number(ms) || 0) / 1000);
+  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+};
+const icons = {
+  play: '<path d="m8 5 10 7-10 7Z" fill="currentColor" stroke="none"/>',
+  pause: '<path d="M9 5v14M15 5v14" stroke-width="3"/>',
+  library: '<path d="M4 4v16M9 4v16M14 5l5-1 3 15-5 1Z"/>',
+  focus: '<path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5"/>',
+  close: '<path d="m6 6 12 12M18 6 6 18"/>',
+  restart: '<path d="M5 9a8 8 0 1 1-1 6M5 4v5h5"/>',
+  fit: '<path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6M9 12h6m-3-3v6"/>',
+  final: '<path d="m5 6 10 6-10 6Z"/><path d="M19 5v14"/>',
+  export: '<path d="M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5"/>',
+  arrow: '<path d="M4 12h15m-5-5 5 5-5 5"/>',
+  search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
+};
+const icon = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[name]}</svg>`;
+const editableTarget = (target) => target instanceof Element && !!target.closest('input, textarea, select, [contenteditable="true"]');
 
-export function createHud({ packs, onPack, onPlayPause, onSeek, onSpeed, onFinal, onRestart, onExport, onFit, onDeselect, onRecord, onLibrary }) {
+// The legacy main module provides seat metadata with <b>/<br> formatting.
+// Rebuild this tiny allowlist as DOM nodes; external seat data cannot create
+// links, images, attributes, scripts, or other active content.
+function seatContent(markup) {
+  const doc = new DOMParser().parseFromString(String(markup ?? ''), 'text/html');
+  const frag = document.createDocumentFragment();
+  function append(source, target) {
+    for (const node of source.childNodes) {
+      if (node.nodeType === Node.TEXT_NODE) target.append(document.createTextNode(node.textContent));
+      else if (node.nodeType === Node.ELEMENT_NODE) {
+        if (node.tagName === 'BR') target.append(document.createElement('br'));
+        else if (node.tagName === 'B' || node.tagName === 'STRONG') {
+          const strong = document.createElement('strong'); append(node, strong); target.append(strong);
+        } else if (!['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT'].includes(node.tagName)) append(node, target);
+      }
+    }
+  }
+  append(doc.body, frag);
+  return frag;
+}
+
+export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, onFinal, onRestart, onExport, onFit, onDeselect, onRecord, onLibrary, onDemo, onViewMode } = {}) {
   const el = document.createElement('div');
   el.id = 'hud';
+  el.dataset.view = 'galaxy';
   el.innerHTML = `
-    <div class="panel top">
-      <div class="brand">2000 TRACES <span class="dim">— collective record</span></div>
-      <select id="pack"></select>
-      <button id="libBtn">KÜTÜPHANE</button>
-      <div id="stats" class="dim"></div>
-    </div>
-    <div class="panel library" id="libPanel" hidden>
-      <div class="libHead">KÜTÜPHANE</div>
-      <div id="libBody"></div>
-    </div>
-    <div class="panel seat" id="seatPanel" hidden>
-      <div class="pid" id="selPid"></div>
-      <div id="selMeta" class="dim"></div>
-      <button id="deselect">kapat (esc)</button>
-    </div>
-    <div class="panel transport">
-      <button id="rec" class="rec" title="canlı akıştan 90 sn kaydet">● KAYIT</button>
-      <button id="play">▶</button>
-      <button id="restart" title="baştan oynat">⟲</button>
-      <input id="scrub" type="range" min="0" max="90000" value="90000" step="50">
-      <span id="clock" class="mono">90.0s</span>
-      <select id="speed">
-        <option value="0.25">0.25×</option><option value="0.5">0.5×</option>
-        <option value="1" selected>1×</option><option value="2">2×</option>
-        <option value="4">4×</option><option value="8">8×</option>
-      </select>
-      <button id="final">SON HAL</button>
-      <button id="fit">SIĞDIR</button>
-      <button id="export">PNG 4K</button>
-    </div>
-    <div class="panel help dim">kaydır: sürükle · yakınlaş: tekerlek · koltuk seç: tıkla · H: arayüzü gizle</div>
+    <header class="panel top">
+      <div class="identity" aria-label="2000 TRACES, Cosmic Symphony">
+        <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 42 42" fill="none"><circle cx="21" cy="21" r="17" stroke="currentColor" stroke-width=".6" opacity=".45"/><ellipse cx="21" cy="21" rx="10" ry="17" transform="rotate(38 21 21)" stroke="currentColor" stroke-width=".65"/><ellipse cx="21" cy="21" rx="10" ry="17" transform="rotate(-38 21 21)" stroke="currentColor" stroke-width=".65" opacity=".65"/><circle cx="21" cy="21" r="2" fill="#f0e5d5"/><circle cx="35" cy="11" r="1.5" fill="currentColor"/></svg></div>
+        <div><div class="brand">2000 TRACES</div><div class="brand-sub">COSMIC SYMPHONY</div></div>
+      </div>
+      <div class="top-actions">
+        <div class="connection" id="connection" data-state="offline"><span class="status-dot"></span><span id="connectionLabel">ARŞİV GÖRÜNÜMÜ</span></div>
+        <div class="view-switch" role="group" aria-label="Görselleştirme biçimi"><button id="galaxyView" aria-pressed="true">Evren</button><button id="recordView" aria-pressed="false">Plak</button></div>
+        <button id="libBtn" class="library-toggle" aria-controls="libPanel" aria-expanded="false" aria-label="Kayıt kütüphanesini aç">${icon('library')}<span class="button-label">Kütüphane</span></button>
+        <button id="focus" class="focus-button" aria-label="Sahne moduna geç, arayüzü gizle" title="Sahne modu · H">${icon('focus')}</button>
+      </div>
+    </header>
+    <section class="intro" aria-labelledby="artworkTitle">
+      <p class="eyebrow">Kolektif bir ses atlası</p>
+      <h1 id="artworkTitle">Birlikte,<br><span>iz bırakırız.</span></h1>
+      <p class="intro-copy">Her hareket bir titreşim.<br>Her ses, ortak bir evrenin parçası.<br>Bir anın, binlerce farklı izi.</p>
+      <div class="metrics" aria-label="Görüntülenen eserin verileri"><div class="metric"><span id="participants" class="metric-number">—</span><span class="metric-label">Katılımcı</span></div><div class="metric"><span id="events" class="metric-number">—</span><span class="metric-label">Etkileşim</span></div></div>
+      <button id="demo" class="demo-action">Örnek evreni keşfet ${icon('arrow')}</button>
+    </section>
+    <div id="stats" role="status" aria-live="polite" aria-atomic="true"></div>
+    <div class="work-note"><div class="work-kicker" id="workKicker">Kolektif arşiv</div><div class="work-name" id="workName">Henüz bir kayıt seçilmedi</div><div class="work-format" id="workFormat">Ses · hareket · zaman</div></div>
+    <div class="stage-caption"><i aria-hidden="true"></i><span id="stageCaption">HER İZ BİR AN.<br>HER AN BİRLİKTE.</span></div>
+    <div id="loading" class="loading-indicator" role="status" hidden><span class="spinner" aria-hidden="true"></span><span id="loadingLabel">Eser yükleniyor</span></div>
+    <section class="panel library" id="libPanel" aria-labelledby="libraryTitle" hidden>
+      <div class="drawer-top"><div><div class="drawer-eyebrow">KOLEKTİF ARŞİV</div><h2 class="drawer-title" id="libraryTitle">Kütüphane</h2></div><button id="closeLibrary" aria-label="Kütüphaneyi kapat">${icon('close')}</button></div>
+      <label class="search-wrap">${icon('search')}<span class="sr-only">Kayıtlarda ara</span><input id="librarySearch" type="search" placeholder="Bir anı, bir kayıt ara…" autocomplete="off"></label>
+      <label class="sr-only" for="pack">Arşivden eser seç</label><select id="pack" class="sr-only" tabindex="-1" aria-hidden="true"></select>
+      <div id="libBody" aria-live="polite"><div class="lib-empty">Kütüphane yükleniyor…</div></div>
+      <div class="library-foot">Bir kaydı açarak bıraktığı izleri yeniden keşfedin.</div>
+    </section>
+    <aside class="panel seat" id="seatPanel" aria-label="Seçilen katılımcı" hidden>
+      <div class="seat-head"><div><div class="drawer-eyebrow">BİR İZİN HİKÂYESİ</div><div class="pid" id="selPid"></div></div><button id="deselect" aria-label="Katılımcı seçimini kapat" title="Seçimi kaldır · Esc">${icon('close')}</button></div><div id="selMeta" class="seat-meta"></div>
+    </aside>
+    <nav class="panel transport" aria-label="Eser oynatma denetimleri">
+      <div class="record-control"><button id="rec" class="rec" title="Canlı akıştan 90 saniye kaydet" aria-label="Canlı kayıt başlat"><span class="record-dot" aria-hidden="true"></span><span class="rec-label" id="recLabel">Canlı kayıt</span></button></div>
+      <div class="transport-center"><button id="play" class="play" aria-label="Oynat" title="Oynat / duraklat · Boşluk">${icon('play')}</button><button id="restart" class="transport-icon" aria-label="Baştan oynat" title="Baştan oynat">${icon('restart')}</button><div class="timeline"><span id="clock" class="clock" aria-hidden="true">00:00</span><label for="scrub" class="sr-only">Oynatma konumu</label><input id="scrub" type="range" min="0" max="90000" value="0" step="50" aria-valuetext="00:00"><span id="duration" class="clock duration" aria-hidden="true">01:30</span></div><label class="sr-only" for="speed">Oynatma hızı</label><select id="speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option></select></div>
+      <div class="transport-tools"><button id="final" class="transport-icon" aria-label="Eserin tamamını göster" title="Son hâl">${icon('final')}</button><button id="fit" class="transport-icon" aria-label="Eseri ekrana sığdır" title="Ekrana sığdır · F">${icon('fit')}</button><button id="export" class="export-button" aria-label="Eseri 4K PNG olarak indir" title="4096 × 4096 PNG">${icon('export')}<span id="exportLabel">Görseli kaydet</span><span class="export-tag">4K</span></button></div>
+    </nav>
+    <footer class="footer"><div class="footer-help">Sürükle, keşfet <span aria-hidden="true">·</span> Bir ize dokun<span class="desktop-help"> <span aria-hidden="true">·</span> Yakınlaş: tekerlek <span aria-hidden="true">·</span> Sahne: H</span></div><div class="footer-right">THE ART OF TOGETHERNESS</div></footer>
+    <button id="focusReturn" class="focus-return" hidden>${icon('focus')}<span>Arayüzü göster</span><span class="desktop-help"> · H</span></button>
+    <div id="announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
   `;
   document.body.appendChild(el);
-
   const $ = (id) => el.querySelector('#' + id);
-  // Buttons blur on click: a focused button would otherwise be re-activated
-  // by Space/Enter later — during a live take that would stop the recording.
-  const click = (id, fn) => { $(id).onclick = (e) => { e.currentTarget.blur(); fn(); }; };
-  $('pack').onchange = (e) => { e.target.blur(); onPack(e.target.value); };
-  click('play', onPlayPause);
-  click('restart', onRestart);
-  $('scrub').oninput = (e) => onSeek(Number(e.target.value));
-  $('speed').onchange = (e) => { e.target.blur(); onSpeed(Number(e.target.value)); };
-  click('final', onFinal);
-  click('fit', onFit);
-  click('export', onExport);
-  click('deselect', onDeselect);
-  click('rec', onRecord);
-  click('libBtn', onLibrary);
+  let durationMs = 90000;
+  let liveMode = false;
+  let hasArtwork = false;
+  let loading = false;
+  let focused = false;
+  let exportPending = false;
+  let lastTime = null;
+  let lastClock = null;
+  let lastPlaying = null;
+  let libraryModel = null;
+  let knownPacks = [];
+  let libraryHandlers = {};
+  let libraryReturnFocus = null;
+  const deleteTimers = new Set();
+  const write = (id, value) => { const text = String(value ?? ''); if ($(id).textContent !== text) $(id).textContent = text; };
+  const announce = (value) => write('announcement', value);
+  const run = (callback, ...args) => {
+    try {
+      const result = callback?.(...args);
+      if (result?.catch) result.catch((error) => setStats(`İşlem tamamlanamadı: ${error?.message ?? error}`));
+      return result;
+    } catch (error) { setStats(`İşlem tamamlanamadı: ${error?.message ?? error}`); return undefined; }
+  };
+  // Pointer activation drops focus to avoid a later Space reactivating Record.
+  // Keyboard activation keeps its focus indicator and follows button semantics.
+  const click = (id, callback) => { $(id).onclick = (event) => { if (event.detail) event.currentTarget.blur(); run(callback); }; };
+  const syncDisabled = () => {
+    for (const id of ['play', 'restart', 'scrub', 'speed', 'final']) $(id).disabled = liveMode || !hasArtwork;
+    $('export').disabled = liveMode || !hasArtwork || exportPending || loading;
+    $('pack').disabled = liveMode;
+    $('demo').disabled = liveMode || loading;
+    $('galaxyView').disabled = liveMode;
+    $('recordView').disabled = liveMode;
+  };
+  const setStats = (value) => {
+    const text = String(value ?? '');
+    write('stats', text);
+    $('stats').classList.toggle('error', /hata|başarısız|yüklenemedi|tamamlanamadı|ulaşılamadı|koptu/i.test(text));
+  };
+  const setConnection = (state = 'offline', label) => {
+    const labels = { offline: 'ARŞİV GÖRÜNÜMÜ', ready: 'ARŞİV KAYDI', live: 'CANLI KAYIT', error: 'BAĞLANTI KESİLDİ', demo: 'ÖRNEK VERİ · SİMÜLASYON' };
+    $('connection').dataset.state = state;
+    write('connectionLabel', label || labels[state] || state);
+  };
+  const setExportState = (state, message) => {
+    exportPending = state === 'pending';
+    write('exportLabel', exportPending ? 'Hazırlanıyor…' : 'Görseli kaydet');
+    $('export').setAttribute('aria-busy', String(exportPending));
+    syncDisabled();
+    if (message) setStats(message);
+    else if (state === 'success') announce('4K görsel hazır. İndirme başlatıldı.');
+    else if (state === 'error') setStats('Görsel kaydedilemedi. Lütfen yeniden deneyin.');
+  };
+  const setFocusMode = (on) => {
+    focused = !!on;
+    if (focused) setLibraryOpen(false);
+    el.classList.toggle('focus-mode', focused);
+    $('focusReturn').hidden = !focused;
+    if (focused) $('focusReturn').focus({ preventScroll: true });
+    else $('focus').focus({ preventScroll: true });
+  };
+  const setLibraryOpen = (on) => {
+    if (on) libraryReturnFocus = document.activeElement;
+    $('libPanel').hidden = !on;
+    el.classList.toggle('library-open', !!on);
+    $('libBtn').setAttribute('aria-expanded', String(!!on));
+    $('libBtn').setAttribute('aria-label', on ? 'Kayıt kütüphanesini kapat' : 'Kayıt kütüphanesini aç');
+    if (on) $('librarySearch').focus({ preventScroll: true });
+    else if ($('libPanel').contains(document.activeElement)) {
+      (libraryReturnFocus instanceof HTMLElement && libraryReturnFocus !== document.body ? libraryReturnFocus : $('libBtn')).focus({ preventScroll: true });
+    }
+  };
+  $('pack').onchange = (event) => { if (event.isTrusted) event.target.blur(); run(onPack, event.target.value); };
+  click('play', onPlayPause); click('restart', onRestart); click('final', onFinal); click('fit', onFit);
+  click('deselect', onDeselect); click('rec', onRecord); click('libBtn', onLibrary || (() => setLibraryOpen($('libPanel').hidden)));
+  click('closeLibrary', () => setLibraryOpen(false));
+  click('demo', onDemo);
+  click('galaxyView', () => onViewMode?.('galaxy')); click('recordView', () => onViewMode?.('record'));
+  click('focus', () => setFocusMode(true)); click('focusReturn', () => setFocusMode(false));
+  $('scrub').oninput = (event) => run(onSeek, Number(event.target.value));
+  $('speed').onchange = (event) => run(onSpeed, Number(event.target.value));
+  click('export', async () => {
+    if (exportPending || liveMode || !hasArtwork || !onExport) return;
+    setExportState('pending');
+    try { await onExport(); setExportState('success'); }
+    catch (error) { setExportState('error', `Görsel kaydedilemedi: ${error?.message ?? error}`); }
+  });
+  $('demo').hidden = !onDemo;
+  $('galaxyView').hidden = !onViewMode;
+  $('recordView').hidden = !onViewMode;
 
-  // Two-step delete: first click arms the button ('EMİN MİSİN?') for 4 s,
-  // the second click within that window fires. Blur-on-click like everything
-  // else (keyboard safety during a live take).
-  const armedDelete = (btn, fn) => {
+  window.addEventListener('keydown', (event) => {
+    if (editableTarget(event.target)) {
+      if (event.key === 'Escape' && !$('libPanel').hidden) { event.preventDefault(); setLibraryOpen(false); }
+      return;
+    }
+    if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
+    if (event.key.toLowerCase() === 'h') { event.preventDefault(); setFocusMode(!focused); }
+    if (event.key === 'Escape') {
+      if (focused) setFocusMode(false);
+      if (!$('libPanel').hidden) setLibraryOpen(false);
+    }
+  });
+  const labelLayer = document.createElement('div');
+  labelLayer.id = 'zoneLabels';
+  labelLayer.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(labelLayer);
+
+  const setPacks = (entries = [], selected) => {
+    const previous = selected ?? $('pack').value;
+    knownPacks = entries.map((entry) => typeof entry === 'string' ? { name: entry, label: entry } : entry);
+    const options = knownPacks.map((item) => {
+      const option = document.createElement('option'); option.value = item.name; option.textContent = item.label || item.name; return option;
+    });
+    if (!options.length) { const option = document.createElement('option'); option.value = ''; option.textContent = 'Henüz kayıt yok'; option.disabled = true; options.push(option); }
+    $('pack').replaceChildren(...options);
+    if (previous === '__demo__') {
+      const option = document.createElement('option'); option.value = '__demo__'; option.textContent = 'Örnek evren · simülasyon'; $('pack').prepend(option);
+    }
+    if ([...$('pack').options].some((option) => option.value === previous)) $('pack').value = previous;
+  };
+  const setPack = (name) => {
+    if (name === '__demo__' && ![...$('pack').options].some((option) => option.value === name)) {
+      const option = document.createElement('option'); option.value = name; option.textContent = 'Örnek evren · simülasyon'; $('pack').prepend(option);
+    }
+    $('pack').value = name;
+  };
+  const clearDeleteTimers = () => { for (const timer of deleteTimers) clearTimeout(timer); deleteTimers.clear(); };
+  const makeButton = (label, fn, cls = '') => {
+    const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.className = cls;
+    button.onclick = (event) => { if (event.detail) event.currentTarget.blur(); run(fn); };
+    return button;
+  };
+  const armedDelete = (button, callback, name) => {
     let timer = null;
-    const original = btn.textContent;
-    btn.onclick = (e) => {
-      e.currentTarget.blur();
+    button.setAttribute('aria-label', `${name} kaydını sil`);
+    button.onclick = (event) => {
+      if (event.detail) event.currentTarget.blur();
       if (timer === null) {
-        btn.textContent = 'EMİN MİSİN?';
-        btn.classList.add('armed');
+        button.textContent = 'Silmek için tekrar bas'; button.classList.add('armed');
+        button.setAttribute('aria-label', `${name} kaydını silmeyi onayla`);
+        announce(`${name} kaydını silmek için dört saniye içinde tekrar basın.`);
         timer = setTimeout(() => {
-          timer = null;
-          btn.textContent = original;
-          btn.classList.remove('armed');
-        }, 4000);
+          deleteTimers.delete(timer); timer = null; button.textContent = 'Sil'; button.classList.remove('armed'); button.setAttribute('aria-label', `${name} kaydını sil`);
+        }, 4000); deleteTimers.add(timer);
       } else {
-        clearTimeout(timer);
-        timer = null;
-        // disarm immediately: if the op stalls or fails before the panel
-        // re-renders, the button must not sit live on a single click
-        btn.textContent = original;
-        btn.classList.remove('armed');
-        btn.disabled = true; // re-render replaces the row; until then, inert
-        fn();
+        clearTimeout(timer); deleteTimers.delete(timer); timer = null;
+        button.textContent = 'Sil'; button.classList.remove('armed'); button.disabled = true;
+        run(callback);
       }
     };
   };
-
-  const mkBtn = (label, fn, cls = '') => {
-    const b = document.createElement('button');
-    b.textContent = label;
-    if (cls) b.className = cls;
-    if (fn) b.onclick = (e) => { e.currentTarget.blur(); fn(); };
-    return b;
+  const drawLibrary = () => {
+    clearDeleteTimers();
+    const body = $('libBody'); body.replaceChildren();
+    if (!libraryModel) { const p = document.createElement('p'); p.className = 'lib-empty'; p.textContent = 'Kütüphane yükleniyor…'; body.append(p); return; }
+    const empty = (title, copy) => {
+      const box = document.createElement('div'); box.className = 'lib-empty';
+      const heading = document.createElement('strong'); heading.textContent = title;
+      const description = document.createElement('span'); description.textContent = copy;
+      box.append(heading, description); body.append(box);
+    };
+    if (libraryModel.offline) {
+      empty('Kayıt paneli çevrimdışı.', knownPacks.length ? 'Arşivdeki eserleri keşfedebilirsiniz. Kayıt yönetimi için yerel paneli açın.' : 'Kayıt yönetimi için yerel paneli açın veya örnek evreni keşfedin.');
+      const query = $('librarySearch').value.trim().toLocaleLowerCase('tr-TR');
+      const available = knownPacks.filter((pack) => `${pack.label || ''} ${pack.name}`.toLocaleLowerCase('tr-TR').includes(query));
+      for (const pack of available) {
+        const row = document.createElement('article'); row.className = 'libRow';
+        const title = document.createElement('div'); title.className = 'lib-title'; title.textContent = pack.label || pack.name;
+        const open = makeButton('Eseri aç ↗', () => { run(onPack, pack.name); setLibraryOpen(false); }); open.disabled = liveMode;
+        open.setAttribute('aria-label', `${pack.label || pack.name} eserini aç`); row.append(title, open); body.append(row);
+      }
+      if (query && !available.length) empty('Bu aramada bir iz bulunamadı.', 'Farklı bir kayıt adıyla yeniden deneyin.');
+      if (onDemo) body.append(makeButton('Örnek evreni aç', () => { setLibraryOpen(false); run(onDemo); }));
+      return;
+    }
+    const query = $('librarySearch').value.trim().toLocaleLowerCase('tr-TR');
+    const matches = (item, key) => `${item.label || ''} ${item[key] || ''}`.toLocaleLowerCase('tr-TR').includes(query);
+    const packList = (libraryModel.packs || []).filter((p) => matches(p, 'name'));
+    const sessionList = (libraryModel.sessions || []).filter((s) => s.packName === null && matches(s, 'file'));
+    const section = (title) => { const heading = document.createElement('div'); heading.className = 'lib-section-label'; heading.textContent = title; body.append(heading); };
+    const row = (title, meta, actions) => {
+      const element = document.createElement('article'); element.className = 'libRow';
+      const info = document.createElement('div'); info.className = 'libInfo';
+      const name = document.createElement('div'); name.className = 'lib-title'; name.textContent = title;
+      const detail = document.createElement('div'); detail.className = 'lib-meta'; detail.textContent = meta;
+      info.append(name, detail);
+      const buttons = document.createElement('div'); buttons.className = 'libActs'; buttons.append(...actions);
+      element.append(info, buttons); body.append(element);
+    };
+    if (packList.length) section(`${packList.length} eser`);
+    for (const pack of packList) {
+      const title = pack.label || pack.name;
+      const open = makeButton('Eseri aç ↗', () => { run(libraryHandlers.onOpen, pack.name); setLibraryOpen(false); });
+      open.setAttribute('aria-label', `${title} eserini aç`); open.disabled = liveMode;
+      const remove = makeButton('Sil', null, 'danger'); armedDelete(remove, () => libraryHandlers.onDeletePack?.(pack.name), title); remove.disabled = liveMode;
+      row(title, `${number(pack.lanes)} katılımcı · ${number(pack.events ?? 0)} etkileşim`, [open, remove]);
+    }
+    if (sessionList.length) section('İşlenmemiş kayıtlar');
+    for (const session of sessionList) {
+      const title = session.label || session.file;
+      const process = makeButton('Esere dönüştür', () => libraryHandlers.onPackSession?.(session.file)); process.disabled = liveMode;
+      const remove = makeButton('Sil', null, 'danger'); armedDelete(remove, () => libraryHandlers.onDeleteSession?.(session.file), title); remove.disabled = liveMode;
+      row(title, `${(Number(session.bytes || 0) / 1048576).toFixed(1)} MB · ${session.complete ? 'Kayıt tamamlandı' : 'Tamamlanmamış kayıt'}`, [process, remove]);
+    }
+    if (!packList.length && !sessionList.length) empty(query ? 'Bu aramada bir iz bulunamadı.' : 'İlk iz henüz bırakılmadı.', query ? 'Farklı bir kayıt adıyla yeniden deneyin.' : 'Canlı akıştan bir kayıt oluşturun veya örnek evreni keşfedin.');
   };
-
-  let hidden = false;
-  window.addEventListener('keydown', (e) => {
-    if (e.key === 'h' || e.key === 'H') { hidden = !hidden; el.classList.toggle('hidden', hidden); }
-  });
-
-  const labelLayer = document.createElement('div');
-  labelLayer.id = 'zoneLabels';
-  document.body.appendChild(labelLayer);
-
-  const setPacks = (names, selected) => {
-    $('pack').innerHTML = names.length
-      ? names.map((p) => `<option value="${p}">${p}</option>`).join('')
-      : '<option value="" disabled selected>kayıt yok</option>';
-    if (selected) $('pack').value = selected;
-  };
+  $('librarySearch').oninput = drawLibrary;
   setPacks(packs);
+  syncDisabled();
 
   return {
-    setStats(text) { $('stats').textContent = text; },
-    setDuration(ms) { $('scrub').max = String(ms); },
-    setTime(ms, playing) {
-      $('scrub').value = String(ms);
-      $('clock').textContent = fmt(ms);
-      $('play').textContent = playing ? '⏸' : '▶';
+    setStats,
+    setDuration(ms) {
+      lastTime = null; lastClock = null;
+      durationMs = Math.max(1, Number(ms) || 1); $('scrub').max = String(durationMs); write('duration', clock(durationMs));
     },
-    setPack(name) { $('pack').value = name; },
-    setPacks,
+    setTime(ms, playing) {
+      const value = Math.min(durationMs, Math.round(Math.max(0, Number(ms) || 0) / 50) * 50);
+      const formatted = clock(ms);
+      if (lastTime !== value) { $('scrub').value = String(value); $('scrub').style.setProperty('--progress', `${Math.min(100, value / durationMs * 100)}%`); lastTime = value; }
+      if (lastClock !== formatted) { write('clock', formatted); $('scrub').setAttribute('aria-valuetext', `${formatted} / ${clock(durationMs)}`); lastClock = formatted; }
+      if (lastPlaying !== !!playing) { $('play').innerHTML = icon(playing ? 'pause' : 'play'); $('play').setAttribute('aria-label', playing ? 'Duraklat' : 'Oynat'); lastPlaying = !!playing; }
+    },
+    setPack, setPacks,
+    setArtwork(manifest, { demo = false } = {}) {
+      if (!manifest) return this.setEmpty();
+      hasArtwork = true;
+      const selectedPack = knownPacks.find((pack) => pack.name === $('pack').value);
+      if (!liveMode && !demo && selectedPack && manifest.label) selectedPack.label = manifest.label;
+      const simulated = demo || manifest.simulated === true;
+      write('participants', number(manifest.laneCount)); write('events', number(manifest.eventCount));
+      write('workKicker', liveMode ? 'Canlı kayıt' : simulated ? 'Örnek veri · simülasyon' : 'Kayıttan bir evren');
+      write('workName', manifest.label || manifest.sessionId || 'İsimsiz kayıt');
+      const zones = Array.isArray(manifest.zones) ? ` · ${number(manifest.zones.length)} bölge` : '';
+      write('workFormat', `${clock(manifest.durationMs)} süre${zones}${simulated ? ' · canlı veri içermez' : ''}`);
+      $('demo').hidden = simulated || !onDemo;
+      setConnection(liveMode ? 'live' : simulated ? 'demo' : 'ready');
+      setStats(''); syncDisabled();
+    },
+    setLiveMetrics({ participants, events } = {}) { if (participants !== undefined) write('participants', number(participants)); if (events !== undefined) write('events', number(events)); },
+    setLoading(on, label) { loading = !!on; el.dataset.loading = String(loading); $('loading').hidden = !loading; write('loadingLabel', label || 'Eser yükleniyor'); syncDisabled(); },
+    setConnection,
+    setEmpty(message) {
+      hasArtwork = false; write('participants', '—'); write('events', '—'); write('workKicker', 'Kolektif arşiv'); write('workName', 'İlk iz için hazır'); write('workFormat', 'Ses · hareket · zaman');
+      $('demo').hidden = !onDemo; setStats(message || 'Arşivden bir eser seçin veya örnek evreni keşfedin.'); setConnection('offline'); syncDisabled();
+    },
+    setViewMode(mode) { el.dataset.view = mode; $('galaxyView').setAttribute('aria-pressed', String(mode === 'galaxy')); $('recordView').setAttribute('aria-pressed', String(mode === 'record')); },
+    setExportState,
+    setFocusMode,
     setRecState(label, on) {
-      $('rec').textContent = label;
-      $('rec').classList.toggle('on', !!on);
+      const text = !on && /^●?\s*KAYIT$/i.test(label) ? 'Canlı kayıt' : String(label).replace(/^[●■]\s*/, '');
+      write('recLabel', text); $('rec').classList.toggle('on', !!on); $('rec').title = text;
+      $('rec').setAttribute('aria-label', on ? `Canlı kaydı durdur: ${text}` : 'Canlı kayıt başlat');
+      $('rec').setAttribute('aria-pressed', String(!!on));
     },
     setLiveMode(on) {
-      for (const id of ['play', 'restart', 'scrub', 'speed', 'final', 'export', 'pack']) {
-        $(id).disabled = on;
-      }
+      liveMode = !!on; el.dataset.live = String(liveMode);
+      if (on) { write('workKicker', 'Canlı kayıt'); write('workName', 'Birlikte oluşan bir an'); write('workFormat', 'Katılımcılardan gelen canlı izler'); setConnection('live'); }
+      else if ($('connection').dataset.state === 'live') setConnection('ready');
+      syncDisabled(); if (libraryModel && !$('libPanel').hidden) drawLibrary();
     },
     isLibraryOpen: () => !$('libPanel').hidden,
-    setLibraryOpen(on) { $('libPanel').hidden = !on; },
-    // model: { offline } | { packs, sessions } (server row shapes from
-    // GET /api/library) + handlers { onOpen, onDeletePack, onPackSession,
-    // onDeleteSession }. Full rebuild on every call — timers live in closures.
-    renderLibrary(model, handlers = {}) {
-      const body = $('libBody');
-      body.innerHTML = '';
-      if (model.offline) {
-        const d = document.createElement('div');
-        d.className = 'dim';
-        d.textContent = 'kayıt sunucusu kapalı (npm run panel)';
-        body.appendChild(d);
-        return;
-      }
-      const row = (title, meta, buttons) => {
-        const r = document.createElement('div');
-        r.className = 'libRow';
-        const info = document.createElement('div');
-        info.className = 'libInfo';
-        const t = document.createElement('div');
-        t.textContent = title;
-        const m = document.createElement('div');
-        m.className = 'dim';
-        m.textContent = meta;
-        info.append(t, m);
-        const acts = document.createElement('div');
-        acts.className = 'libActs';
-        acts.append(...buttons);
-        r.append(info, acts);
-        body.appendChild(r);
-      };
-      for (const p of model.packs) {
-        const del = mkBtn('SİL', null, 'danger');
-        armedDelete(del, () => handlers.onDeletePack?.(p.name));
-        row(
-          p.label || p.name, // '' (etiketsiz kayıt) da isme düşmeli
-          `${p.lanes} şerit · ${(p.events ?? 0).toLocaleString('tr-TR')} olay`,
-          [mkBtn('AÇ', () => handlers.onOpen?.(p.name)), del],
-        );
-      }
-      const loose = model.sessions.filter((s) => s.packName === null);
-      for (const s of loose) {
-        const del = mkBtn('SİL', null, 'danger');
-        armedDelete(del, () => handlers.onDeleteSession?.(s.file));
-        row(
-          s.label || s.file,
-          `${(s.bytes / 1048576).toFixed(1)} MB${s.complete ? '' : ' · yarım'}`,
-          [mkBtn('PAKETLE', () => handlers.onPackSession?.(s.file)), del],
-        );
-      }
-      if (!model.packs.length && !loose.length) {
-        const d = document.createElement('div');
-        d.className = 'dim';
-        d.textContent = 'kütüphane boş';
-        body.appendChild(d);
-      }
-    },
-    showSeat(info) {
-      $('seatPanel').hidden = !info;
-      if (info) { $('selPid').textContent = info.title; $('selMeta').innerHTML = info.meta; }
-    },
+    setLibraryOpen,
+    renderLibrary(model, handlers = {}) { libraryModel = model; libraryHandlers = handlers; drawLibrary(); },
+    showSeat(info) { $('seatPanel').hidden = !info; if (info) { write('selPid', info.title); $('selMeta').replaceChildren(seatContent(info.meta)); } },
     labelLayer,
   };
 }
 
 export function updateZoneLabels(layer, layout, project, pxPerWorld) {
-  // rebuild keyed on the band CONTENT, not just count: equal-count layouts
-  // with different zone names (pack switch, live spare band) must relabel
-  const sig = layout.zoneBands.map((b) => `${b.zone} ${b.laneStart}`).join('|');
+  const sig = JSON.stringify(layout.zoneBands.map((band) => [band.zone, band.laneStart]));
   if (layer.dataset.sig !== sig) {
     layer.dataset.sig = sig;
-    layer.innerHTML = layout.zoneBands.map((b) => `<span class="zl">${b.zone}</span>`).join('');
+    layer.replaceChildren(...layout.zoneBands.map((band) => { const label = layer.ownerDocument.createElement('span'); label.className = 'zl'; label.textContent = String(band.zone); return label; }));
   }
   layout.zoneBands.forEach((band, i) => {
-    const el = layer.children[i];
-    const mid = (band.r0 + band.r1) / 2;
-    const p = project(0, mid); // along the 12 o'clock spoke
+    const label = layer.children[i];
+    const point = project(0, (band.r0 + band.r1) / 2);
     const bandPx = (band.r1 - band.r0) * pxPerWorld;
-    el.style.transform = `translate(${p.x}px, ${p.y}px)`;
-    el.style.opacity = bandPx >= 11 && p.visible ? '0.8' : '0';
+    label.style.transform = `translate(${point.x}px, ${point.y}px)`;
+    label.style.opacity = bandPx >= 11 && point.visible ? '0.8' : '0';
   });
 }

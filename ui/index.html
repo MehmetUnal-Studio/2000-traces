@@ -1,71 +1,64 @@
-<!-- ui/index.html -->
 <!doctype html>
 <html lang="tr">
 <head>
-<meta charset="utf-8">
-<title>2000 TRACES — Kayıt Paneli</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-  body { background:#0b0e14; color:#cdd6e4; font:14px/1.5 "SF Mono",Menlo,monospace; margin:0; padding:24px; max-width:720px; }
-  h1 { font-size:16px; color:#fff; }
-  .row { display:flex; gap:12px; flex-wrap:wrap; margin:16px 0; }
-  .card { background:#11151f; border:1px solid #1e2635; border-radius:8px; padding:12px 16px; min-width:120px; flex:1; }
-  .card b { display:block; font-size:11px; color:#5c6773; letter-spacing:.08em; margin-bottom:6px; }
-  .big { font-size:20px; color:#fff; }
-  button { background:#11151f; border:1px solid #1e2635; color:#cdd6e4; border-radius:6px; padding:8px 16px; font:inherit; cursor:pointer; }
-  button:hover { border-color:#7aa2f7; }
-  button:disabled { opacity:.4; cursor:default; }
-  #state.RECORDING { color:#ff5470; }
-  #state.COMPLETE { color:#3ddc84; }
-  a { color:#7aa2f7; }
-  ul { padding-left:20px; }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#060c13">
+  <meta name="description" content="2000 TRACES — performans kayıt ve oturum arşivi.">
+  <title>2000 TRACES — Kayıt masası</title>
+  <link rel="stylesheet" href="/panel.css">
+  <script type="module" src="/panel.js"></script>
 </head>
 <body>
-<h1>2000 TRACES — KAYIT PANELİ</h1>
-<div class="row">
-  <div class="card"><b>DURUM</b><span class="big" id="state">…</span></div>
-  <div class="card"><b>KATILIMCI</b><span class="big" id="participants">0</span></div>
-  <div class="card"><b>KAYITLI OLAY</b><span class="big" id="stored">0</span></div>
-  <div class="card"><b>HATALI / GEÇ / TEKRAR</b><span class="big" id="anoms">0/0/0</span></div>
-</div>
-<div class="row" id="errRow" style="display:none">
-  <div class="card" style="border-color:#ff5470"><b style="color:#ff5470">HATA</b><span id="err" style="color:#ff5470"></span></div>
-</div>
-<div class="row">
-  <button id="arm">ARM</button>
-  <button id="start">BAŞLAT (90 sn)</button>
-  <button id="stop">ERKEN DURDUR</button>
-</div>
-<h1 style="font-size:13px">OTURUMLAR</h1>
-<ul id="sessions"></ul>
-<script>
-  const $ = (id) => document.getElementById(id);
-  const post = (p) => fetch(p, { method: 'POST' });
-  $('arm').onclick = () => post('/api/arm');
-  $('start').onclick = () => post('/api/start');
-  $('stop').onclick = () => post('/api/stop');
-  async function tick() {
-    try {
-      const st = await (await fetch('/api/status')).json();
-      $('state').textContent = st.state;
-      $('state').className = st.state;
-      $('participants').textContent = st.participants ?? 0;
-      $('stored').textContent = st.stats?.stored ?? 0;
-      $('anoms').textContent = `${st.stats?.malformed ?? 0}/${st.stats?.late ?? 0}/${st.stats?.duplicates ?? 0}`;
-      const err = st.lastError ? `kayıt hatası: ${st.lastError.message}`
-        : st.packError ? `paketleme hatası: ${st.packError} — jsonl diskte sağlam` : null;
-      $('errRow').style.display = err ? '' : 'none';
-      $('err').textContent = err ?? '';
-      $('arm').textContent = st.state === 'ARMED' ? 'DISARM' : 'ARM';
-      $('arm').disabled = !(st.state === 'IDLE' || st.state === 'COMPLETE' || st.state === 'ARMED');
-      $('start').disabled = st.state !== 'ARMED';
-      $('stop').disabled = st.state !== 'RECORDING';
-      const ss = await (await fetch('/api/sessions')).json();
-      $('sessions').innerHTML = ss.map((s) => `<li><a href="/sessions/${s.file}">${s.file}</a> — ${(s.bytes / 1e6).toFixed(1)} MB</li>`).join('');
-    } catch { $('state').textContent = 'BAĞLANTI YOK'; }
-  }
-  setInterval(tick, 1000); tick();
-</script>
+  <a class="skip-link" href="#main">Kayıt kontrollerine geç</a>
+  <div class="shell">
+    <header class="header">
+      <a class="wordmark" href="/" aria-label="2000 TRACES ana sayfa"><span class="brand-mark" aria-hidden="true">✳</span> 2000 <span>TRACES</span></a>
+      <div class="header-actions">
+        <span class="connection" id="connection" role="status"><i aria-hidden="true"></i><span id="connection-text">Bağlantı kuruluyor</span></span>
+        <a class="viewer-link" href="http://127.0.0.1:5174/" target="_blank" rel="noopener">Görselleştirici <span aria-hidden="true">↗</span><span class="sr-only"> (yeni sekmede)</span></a>
+      </div>
+    </header>
+    <main id="main">
+      <div class="page-intro">
+        <div><p class="eyebrow">COSMIC SYMPHONY / CAPTURE</p><h1>Kayıt masası<span>.</span></h1></div>
+        <p class="intro-note">Birlikte oluşan hareketi kaydet.<br>Her katılımcının izini koru.</p>
+      </div>
+      <div id="connection-error" class="notice" role="alert" hidden>
+        <div><strong>Panel sunucusuna ulaşılamıyor.</strong><p>Durum doğrulanana kadar kontroller kilitli. Kayıt sunucuda devam ediyor olabilir.</p><small id="connection-detail"></small></div>
+        <button id="retry" type="button" class="button subtle">Yeniden dene</button>
+      </div>
+      <div id="action-error" class="notice" role="alert" hidden><div><strong>İşlem tamamlanamadı</strong><p id="action-error-text"></p></div><button id="dismiss-error" type="button" class="button subtle" aria-label="İşlem hatası bildirimini kapat">Kapat</button></div>
+      <div id="recording-error" class="notice" role="alert" hidden><div><strong id="recording-error-title"></strong><p id="recording-error-text"></p></div></div>
+      <div class="dashboard">
+        <section class="capture surface" aria-labelledby="capture-heading">
+          <div class="section-top"><h2 id="capture-heading">Oturum kontrolü</h2><span class="state" id="state" role="status">BAĞLANIYOR</span></div>
+          <div class="timer"><span id="elapsed">00:00</span><span class="timer-divider">/</span><span id="duration">01:30</span></div>
+          <progress id="progress" value="0" max="90000" aria-label="Kayıt süresi"></progress>
+          <p class="state-description" id="state-description">Sunucunun güncel durumu bekleniyor.</p>
+          <div class="take-field"><label for="take-label">Oturum etiketi <span>İsteğe bağlı</span></label><input id="take-label" maxlength="40" autocomplete="off" placeholder="Örn. Gala - prova 01" aria-describedby="label-help" disabled><p id="label-help">En fazla 40 karakter. Harf, rakam, boşluk, _ ve - kullanın.</p></div>
+          <div class="controls" role="group" aria-label="Kayıt kontrolleri">
+            <button id="arm" type="button" class="button secondary" disabled><span aria-hidden="true">◇</span><span id="arm-text">ARM · Hazırla</span></button>
+            <button id="start" type="button" class="button primary" disabled><span class="record-dot" aria-hidden="true"></span><span id="start-text">Kaydı başlat</span></button>
+            <button id="stop" type="button" class="button stop" disabled><span aria-hidden="true">■</span><span id="stop-text">Durdur</span></button>
+          </div>
+          <p class="control-note">Önce hazırla, sonra başlat. Sayfayı yenilemek kaydı etkilemez.</p>
+          <div class="session-id"><span>OTURUM</span><code id="session-id">Henüz kayıt yok</code></div>
+        </section>
+        <section class="telemetry surface" aria-labelledby="telemetry-heading">
+          <div class="section-top"><h2 id="telemetry-heading">Kayıt verileri</h2><span class="eyebrow" id="metrics-context">BEKLENİYOR</span></div>
+          <div class="primary-metrics"><div><span class="metric-label">Katılımcı</span><strong id="participants">—</strong><span class="metric-foot">Kayda giren benzersiz iz</span></div><div><span class="metric-label">Kaydedilen olay</span><strong id="stored">—</strong><span class="metric-foot">Oturuma kabul edilen</span></div></div>
+          <div class="secondary-metrics"><div><span>Alınan</span><b id="received">—</b></div><div><span>Hatalı</span><b id="malformed">—</b></div><div><span>Geç / erken</span><b id="out-of-window">—</b></div><div><span>Tekrar</span><b id="duplicates">—</b></div></div>
+          <div class="telemetry-note"><span class="note-icon" aria-hidden="true">↳</span><p>İstatistikler sunucudan gelir.<br><span id="updated-at">İlk güncelleme bekleniyor.</span></p></div>
+        </section>
+      </div>
+      <section class="archive" aria-labelledby="archive-heading">
+        <div class="archive-heading"><div><p class="eyebrow">SESSION ARCHIVE</p><h2 id="archive-heading">Oturumlar <span id="session-count">—</span></h2></div><span class="archive-caption">Ham kayıt · JSONL</span></div>
+        <div class="archive-body surface"><p class="library-message" id="library-message" role="status">Oturumlar yükleniyor…</p><div class="table-scroll" id="sessions-table-wrap" hidden><table><thead><tr><th scope="col">Oturum / son güncelleme</th><th scope="col">Katılımcı</th><th scope="col">Olay</th><th scope="col">Durum</th><th scope="col">Dosya</th></tr></thead><tbody id="sessions"></tbody></table></div></div>
+      </section>
+    </main>
+    <footer><span>2000 TRACES <span class="footer-slash">/</span> A collective memory</span><span>Yerel kayıt masası <span class="footer-dot" aria-hidden="true">·</span> 127.0.0.1</span></footer>
+  </div>
+  <noscript><p class="noscript">Kayıt panelinin durum ve kontrolleri için JavaScript etkin olmalıdır.</p></noscript>
 </body>
 </html>

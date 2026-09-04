@@ -38,21 +38,21 @@ test('pickLane: lane centers and mid-lane clicks still pick the lane', () => {
 });
 
 function layerStub() {
+  const ownerDocument = {
+    createElement(tagName) {
+      return { tagName: tagName.toUpperCase(), textContent: '', style: {} };
+    },
+  };
   const layer = {
+    ownerDocument,
     dataset: {},
     children: [],
-    innerHTML: '',
+    replaceChildren(...children) { this.children = children; },
   };
-  Object.defineProperty(layer, 'childElementCount', { get: () => layer.children.length });
-  // mimic innerHTML assignment producing spans with textContent + style
-  let html = '';
+  // Zone labels come from recordings and live peers. Rendering must use text
+  // nodes rather than interpreting externally supplied names as markup.
   Object.defineProperty(layer, 'innerHTML', {
-    get: () => html,
-    set: (v) => {
-      html = v;
-      layer.children = [...v.matchAll(/<span class="zl">(.*?)<\/span>/g)]
-        .map((m) => ({ textContent: m[1], style: {} }));
-    },
+    set() { throw new Error('Zone labels must not be parsed as HTML'); },
   });
   return layer;
 }
@@ -69,6 +69,25 @@ test('zone labels rebuild when zone names change at equal band count', () => {
   const l2 = buildLayout(manifest); // zones A,B — same count, new names
   updateZoneLabels(layer, l2, project, 1000);
   assert.deepEqual(layer.children.map((c) => c.textContent), ['A', 'B']);
+});
+
+test('hostile zone names remain literal text and same-content labels are reused', () => {
+  const hostile = '<img src=x onerror="globalThis.injected=true"> & <script>boom</script>';
+  const layer = layerStub();
+  const layout = buildLayout({ ...manifest, zones: [
+    { zone: hostile, laneStart: 0, laneCount: 64 },
+    { zone: 'A & B "quoted"', laneStart: 64, laneCount: 64 },
+  ] });
+  const project = () => ({ x: 120, y: 240, visible: true });
+  updateZoneLabels(layer, layout, project, 1000);
+  assert.deepEqual(layer.children.map((node) => node.tagName), ['SPAN', 'SPAN']);
+  assert.deepEqual(layer.children.map((node) => node.textContent), [hostile, 'A & B "quoted"']);
+  const originalNodes = [...layer.children];
+  updateZoneLabels(layer, layout, () => ({ x: 60, y: 80, visible: false }), 1000);
+  assert.equal(layer.children[0], originalNodes[0]);
+  assert.equal(layer.children[1], originalNodes[1]);
+  assert.equal(layer.children[0].style.opacity, '0', 'labels disappear when panned outside the viewport');
+  assert.equal(layer.children[0].style.transform, 'translate(60px, 80px)');
 });
 
 // ---------------------------------------------------------------- rosterLayout

@@ -107,6 +107,9 @@ export function createControlServer({
     packError: finalizing ? null : lastSummary?.packError ?? null,
     lastError,
     durationMs,
+    label: current?.label ?? finalizing?.label ?? lastSummary?.label ?? '',
+    startedAtLocalMs: current?.session?.meta?.().startedAtLocalMs ?? finalizing?.startedAtLocalMs ?? lastSummary?.startedAtLocalMs ?? null,
+    endedAtLocalMs: current ? null : finalizing?.endedAtLocalMs ?? lastSummary?.endedAtLocalMs ?? null,
   });
 
   // The take being recorded (or packed right after) must never be packed over
@@ -201,7 +204,10 @@ export function createControlServer({
       record
         .then(async (summary) => {
           clearTimeout(current?.killer);
-          finalizing = { sessionId, stats: summary.stats, participants: summary.participants };
+          finalizing = {
+            sessionId, label, stats: summary.stats, participants: summary.participants,
+            startedAtLocalMs: summary.startedAtLocalMs, endedAtLocalMs: summary.endedAtLocalMs,
+          };
           current = null;
           phase = 'FINALIZING';
           broadcast({ kind: 'state', state: 'FINALIZING', sessionId, label });
@@ -275,7 +281,7 @@ export function createControlServer({
   };
 
   function json(res, obj, code = 200) {
-    res.writeHead(code, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' });
     res.end(JSON.stringify(obj));
   }
 
@@ -349,6 +355,12 @@ export function createControlServer({
         if (req.method === 'GET' && (req.url === '/' || req.url === '/index.html')) {
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
           return res.end(readFileSync(new URL('../ui/index.html', import.meta.url)));
+        }
+        const panelAssets = { '/panel.js': ['panel.js', 'text/javascript'], '/panel.css': ['panel.css', 'text/css'] };
+        const panelAsset = req.method === 'GET' && panelAssets[req.url.split('?')[0]];
+        if (panelAsset) {
+          res.writeHead(200, { 'Content-Type': `${panelAsset[1]}; charset=utf-8`, 'Cache-Control': 'no-store' });
+          return res.end(readFileSync(new URL(`../ui/${panelAsset[0]}`, import.meta.url)));
         }
         res.writeHead(404); res.end('not found');
       });

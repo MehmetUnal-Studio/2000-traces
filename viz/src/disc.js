@@ -7,14 +7,23 @@ import * as THREE from 'three';
 import { EVENT_RECORD_BYTES, STROKE_RECORD_BYTES, TYPE } from './pack-loader.js';
 import { mulberry32 } from './prng.js';
 import { DISC_VERTEX, POINT_FRAGMENT, LINE_FRAGMENT } from './shaders.js';
+import { projectTracePoint } from './cosmic-projection.js';
 
 const STROKE_SEGMENT_MS = 120;
 
-// 10 musical lines -> muted accents around warm ivory; restrained on purpose.
+// Musical lines keep distinct tones within an ice / ivory / amber palette.
 export function lineColors() {
-  const hues = [0.115, 0.05, 0.26, 0.58, 0.76, 0.09, 0.33, 0.52, 0.68, 0.0];
-  return hues.map((h) => new THREE.Color().setHSL(h, 0.38, 0.72));
+  return [
+    [0.72, 0.89, 1.00], [1.00, 0.49, 0.16], [0.94, 0.95, 0.91],
+    [0.42, 0.74, 0.95], [0.63, 0.72, 0.91], [1.00, 0.75, 0.38],
+    [0.53, 0.79, 0.82], [0.35, 0.62, 0.86], [0.79, 0.87, 1.00],
+    [1.00, 0.40, 0.12],
+  ].map(([r, g, b]) => new THREE.Color().setRGB(r, g, b));
 }
+
+// The sparse study remains legible, while a two-million-event take gains
+// texture without saturating into a solid sheet of additive pixels.
+export const densityExposure = (grainCount) => Math.max(0.08, Math.min(1, Math.sqrt(50000 / Math.max(1, grainCount))));
 
 export function laneBoost(laneCount) {
   // sparser sessions get wider lanes and less pixel overlap; lift exposure
@@ -37,21 +46,37 @@ export function buildFrame(layout) {
   pushRing(layout.zoneBands[layout.zoneBands.length - 1].r1 + layout.laneWidth * 2);
   const frameGeo = new THREE.BufferGeometry();
   frameGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ringVerts), 3));
-  const frameMat = new THREE.LineBasicMaterial({ color: 0x1c2027, transparent: true, opacity: 0.9 });
+  const frameMat = new THREE.LineBasicMaterial({ color: 0x456177, transparent: true, opacity: 0.17, depthWrite: false });
   return new THREE.LineSegments(frameGeo, frameMat);
 }
 
 export function buildPlayhead(layout) {
   const playheadGeo = new THREE.BufferGeometry();
-  playheadGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
-    0, layout.zoneBands[0].r0 - layout.laneWidth * 4, 0,
-    0, layout.zoneBands[layout.zoneBands.length - 1].r1 + layout.laneWidth * 4, 0,
-  ]), 3));
+  // A curved isochrone in galaxy mode, a radial ray in record mode.
+  playheadGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(129 * 3), 3));
+  playheadGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 2);
   const playheadMat = new THREE.LineBasicMaterial({
-    color: 0xf2ead8, transparent: true, opacity: 0.0,
-    blending: THREE.AdditiveBlending, depthTest: false,
+    color: 0xabcfe4, transparent: true, opacity: 0.0,
+    blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false,
   });
-  return { playhead: new THREE.Line(playheadGeo, playheadMat), playheadMat };
+  const playhead = new THREE.Line(playheadGeo, playheadMat);
+  let lastTime = NaN; let lastMorph = NaN;
+  const updatePlayhead = (time, morph = 1) => {
+    if (time === lastTime && morph === lastMorph) return;
+    lastTime = time; lastMorph = morph;
+    const position = playheadGeo.getAttribute('position');
+    const r0 = layout.zoneBands[0].r0 - layout.laneWidth * 2;
+    const r1 = layout.zoneBands[layout.zoneBands.length - 1].r1 + layout.laneWidth * 2;
+    for (let i = 0; i < position.count; i++) {
+      const r = r0 + (r1 - r0) * i / (position.count - 1);
+      const p = projectTracePoint(r, time, layout.durationMs, morph);
+      position.setXYZ(i, p.x, p.y, 0);
+    }
+    playhead.rotation.z = 0;
+    position.needsUpdate = true;
+  };
+  updatePlayhead(0);
+  return { playhead, playheadMat, updatePlayhead };
 }
 
 export function buildDisc(pack, layout) {
@@ -63,8 +88,10 @@ export function buildDisc(pack, layout) {
     uReplaying: { value: 0 },
     uSelLane: { value: -1 },
     uPointScale: { value: 400 },
-    uPointMax: { value: 8 },
+    uPointMax: { value: 32 },
     uLaneBoost: { value: laneBoost(manifest.laneCount) },
+    uDensity: { value: 1 },
+    uMorph: { value: 1 },
     uLineColors: { value: lineColors() },
   };
 
@@ -77,12 +104,15 @@ export function buildDisc(pack, layout) {
     const t = events.getUint8(i * EVENT_RECORD_BYTES + 10);
     if (t === TYPE.noteOn || t === TYPE.move) grainCount += 1;
   }
+  uniforms.uDensity.value = densityExposure(grainCount);
   const gR = new Float32Array(grainCount);
   const gT = new Float32Array(grainCount);
   const gLane = new Float32Array(grainCount);
   const gKind = new Float32Array(grainCount);
   const gLine = new Float32Array(grainCount);
-  const dispScale = layout.laneWidth * 0.85;
+  // tanh(1.2) + maximum jitter = 0.984: this scale keeps every
+  // gesture inside its own half-lane, including the sparse-session case.
+  const dispScale = layout.laneWidth * 0.46;
   let gi = 0;
   for (let i = 0; i < n; i++) {
     const base = i * EVENT_RECORD_BYTES;
@@ -164,13 +194,23 @@ export function buildDisc(pack, layout) {
   group.add(new THREE.LineSegments(strokeGeo, strokeMat));
 
   // ---- frame + playhead --------------------------------------------------
-  group.add(buildFrame(layout));
-  const { playhead, playheadMat } = buildPlayhead(layout);
+  const frame = buildFrame(layout);
+  frame.visible = false;
+  group.add(frame);
+  const { playhead, playheadMat, updatePlayhead: updateCurve } = buildPlayhead(layout);
   group.add(playhead);
+
+  const updatePlayhead = (time) => updateCurve(time, uniforms.uMorph.value);
+  const setMorph = (morph) => {
+    uniforms.uMorph.value = Math.max(0, Math.min(1, Number(morph) || 0));
+    frame.visible = uniforms.uMorph.value < 0.5;
+    updatePlayhead(uniforms.uTime.value);
+  };
+  const setViewMode = (mode) => setMorph(mode === 'record' ? 0 : 1);
 
   const dispose = () => {
     for (const child of group.children) { child.geometry.dispose(); child.material.dispose(); }
   };
 
-  return { group, uniforms, playhead, playheadMat, grainCount, strokeSegments: segTotal, dispose };
+  return { group, uniforms, playhead, playheadMat, grainCount, strokeSegments: segTotal, setMorph, setViewMode, updatePlayhead, dispose };
 }
