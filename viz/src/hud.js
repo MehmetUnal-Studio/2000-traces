@@ -17,6 +17,7 @@ const icons = {
   export: '<path d="M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5"/>',
   arrow: '<path d="M4 12h15m-5-5 5 5-5 5"/>',
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
+  home: '<path d="m4 11 8-7 8 7M6 10v10h12V10M10 20v-6h4v6"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v.1"/>',
 };
 const icon = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[name]}</svg>`;
@@ -43,7 +44,7 @@ function seatContent(markup) {
   return frag;
 }
 
-export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, onFinal, onRestart, onExport, onFit, onDeselect, onRecord, onLibrary, onDemo, onViewMode, onTilt, onFocusMode, onOrbitMotion } = {}) {
+export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, onFinal, onRestart, onExport, onFit, onDeselect, onRecord, onLibrary, onDemo, onHome, onTilt, onFocusMode, onOrbitMotion } = {}) {
   const el = document.createElement('div');
   el.id = 'hud';
   el.dataset.view = 'nebula';
@@ -56,7 +57,7 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
       </div>
       <div class="exhibition-label"><span class="exhibition-index">[ 01 — ∞ ]</span><span>KOLEKTİF SESİN TOPOGRAFYASI</span></div>
       <div class="top-actions">
-        <div class="view-switch" role="group" aria-label="Görselleştirme biçimi"><button id="nebulaView" aria-pressed="true">Nebula</button><button id="galaxyView" aria-pressed="false">Atlas</button><button id="recordView" aria-pressed="false">Mürekkep</button></div>
+        <button id="home" class="home-button" aria-label="Başlangıç ekranına dön">${icon('home')}<span>Başlangıç</span></button>
         <button id="libBtn" class="library-toggle" aria-controls="libPanel" aria-expanded="false" aria-label="Kayıt kütüphanesini aç">${icon('library')}<span class="button-label">Arşiv</span></button>
         <button id="focus" class="focus-button" aria-label="Sahne moduna geç, arayüzü gizle" title="Sahne modu · H">${icon('focus')}</button>
       </div>
@@ -77,10 +78,9 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
     <aside id="legendPanel" class="legend-panel" aria-labelledby="legendTitle" hidden>
       <div class="legend-head"><h2 id="legendTitle">Eseri okumak</h2><button id="closeLegend" aria-label="Eser açıklamasını kapat">${icon('close')}</button></div>
       <p class="legend-intro" id="legendIntro">Kayıtlı hareketlerden oluşan bir çekim alanı.</p>
-      <dl id="atlasLegend" hidden><div><dt>Yarıçap</dt><dd>Katılımcı grupları</dd></div><div><dt>Hücre açısı</dt><dd>Kayıt boyunca akan zaman</dd></div><div><dt>Bağlantılar</dt><dd>Bir katılımcının ardışık notaları</dd></div><div><dt>Dış çeper</dt><dd>Katılımcı sırası · bireysel aktivite</dd></div></dl>
       <dl id="nebulaLegend"><div><dt>X ekseni</dt><dd id="legendX">Yörüngenin açısal kıvrımı</dd></div><div><dt>Y ekseni</dt><dd id="legendY">Yörünge yarıçapı ve disk kalınlığı</dd></div><div><dt>İz bağlantısı</dt><dd>Aynı bilinen dokunuşun kayıtlı X/Y noktaları</dd></div><div><dt>Mavi / altın</dt><dd>Işık malzemesi; müzik hattı değildir</dd></div></dl>
       <div id="orbitMotionRow" class="orbit-motion-row"><span>Yörünge hareketi</span><button id="orbitMotion" type="button" role="switch" aria-checked="false" aria-label="Yörünge hareketi"><span id="orbitMotionLabel">Kapalı</span><span class="orbit-switch-dot" aria-hidden="true"></span></button><p>Kayıt değerlerini değiştirmeyen görsel hareket.</p></div>
-      <div class="legend-tilt" id="legendTiltRow"><label for="tilt">Kabartı / eğim</label><output id="tiltValue" for="tilt" aria-hidden="true">0°</output><input id="tilt" type="range" min="-35" max="35" step="1" value="0" aria-valuetext="0 derece"><span>Kabartıyı farklı açılardan inceleyin.</span></div>
+      <div class="legend-tilt" id="legendTiltRow"><label for="tilt">Bakış / eğim</label><output id="tiltValue" for="tilt" aria-hidden="true">0°</output><input id="tilt" type="range" min="-35" max="35" step="1" value="0" aria-valuetext="0 derece"><span>Çekim alanına farklı açılardan bakın.</span></div>
       <p class="legend-foot">Bir ize dokunarak katılımcıyı seçin.<br>Sürükleyin, yakınlaşın, ayrıntıları keşfedin.<br><span class="desktop-help">Shift + sürükle · eğ / F · görünümü sıfırla</span></p>
     </aside>
     <div id="loading" class="loading-indicator" role="status" hidden><span class="spinner" aria-hidden="true"></span><span id="loadingLabel">Eser yükleniyor</span></div>
@@ -100,8 +100,8 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
       </div>
     </aside>
     <nav class="panel transport" aria-label="Eser oynatma denetimleri">
-      <div class="record-control"><button id="rec" class="rec" title="Canlı akıştan 90 saniye kaydet" aria-label="Canlı kayıt başlat"><span class="record-dot" aria-hidden="true"></span><span class="rec-label" id="recLabel">Canlı kayıt</span></button></div>
-      <div class="transport-center"><button id="play" class="play" aria-label="Oynat" title="Oynat / duraklat · Boşluk">${icon('play')}</button><button id="restart" class="transport-icon" aria-label="Baştan oynat" title="Baştan oynat">${icon('restart')}</button><div class="timeline"><span id="clock" class="clock" aria-hidden="true">00:00</span><label for="scrub" class="sr-only">Oynatma konumu</label><input id="scrub" type="range" min="0" max="90000" value="0" step="50" aria-valuetext="00:00"><span id="duration" class="clock duration" aria-hidden="true">01:30</span></div><label class="sr-only" for="speed">Oynatma hızı</label><select id="speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option></select></div>
+      <div class="record-control"><button id="rec" class="rec" title="Canlı akıştan 180 saniye kaydet" aria-label="Canlı kayıt başlat"><span class="record-dot" aria-hidden="true"></span><span class="rec-label" id="recLabel">Canlı kayıt</span></button></div>
+      <div class="transport-center"><button id="play" class="play" aria-label="Oynat" title="Oynat / duraklat · Boşluk">${icon('play')}</button><button id="restart" class="transport-icon" aria-label="Baştan oynat" title="Baştan oynat">${icon('restart')}</button><div class="timeline"><span id="clock" class="clock" aria-hidden="true">00:00</span><label for="scrub" class="sr-only">Oynatma konumu</label><input id="scrub" type="range" min="0" max="180000" value="0" step="50" aria-valuetext="00:00"><span id="duration" class="clock duration" aria-hidden="true">03:00</span></div><label class="sr-only" for="speed">Oynatma hızı</label><select id="speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option></select></div>
       <div class="transport-tools"><button id="final" class="transport-icon" aria-label="Eserin tamamını göster" title="Son hâl">${icon('final')}</button><button id="fit" class="transport-icon" aria-label="Eseri ekrana sığdır" title="Ekrana sığdır · F">${icon('fit')}</button><button id="export" class="export-button" aria-label="4K eser önizlemesini hazırla" title="4096 × 4096 PNG">${icon('export')}<span id="exportLabel">Görseli kaydet</span><span class="export-tag">4K</span></button></div>
     </nav>
     <footer class="footer"><div class="footer-help">Sürükle, keşfet <span aria-hidden="true">·</span> Bir ize dokun<span class="desktop-help"> <span aria-hidden="true">·</span> Yakınlaş: tekerlek <span aria-hidden="true">·</span> Sahne: H</span></div><div class="footer-right">COSMIC SYMPHONY / DATA ART</div></footer>
@@ -115,7 +115,7 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
   `;
   document.body.appendChild(el);
   const $ = (id) => el.querySelector('#' + id);
-  let durationMs = 90000;
+  let durationMs = 180000;
   let liveMode = false;
   let hasArtwork = false;
   let loading = false;
@@ -152,11 +152,6 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
     $('export').disabled = liveMode || !hasArtwork || exportPending || loading;
     $('pack').disabled = liveMode;
     $('demo').disabled = liveMode || loading;
-    $('nebulaView').disabled = liveMode;
-    $('galaxyView').disabled = liveMode;
-    $('recordView').disabled = liveMode;
-    $('tilt').disabled = liveMode;
-    $('orbitMotion').disabled = liveMode;
   };
   const validAxis = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
   const syncInspection = () => {
@@ -248,19 +243,19 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
     }
     previewReturnFocus = null;
   };
-  const openExportPreview = async (result, theme) => {
+  const openExportPreview = async (result) => {
     if (!result || typeof result.url !== 'string' || !result.url.startsWith('blob:')) throw new Error('Önizleme dosyası oluşturulamadı.');
     closeExportPreview(false);
     previewUrl = result.url;
     previewReturnFocus = $('export');
     const expectedUrl = previewUrl;
-    $('exportPreview').dataset.theme = theme === 'ink' ? 'ink' : 'atlas';
+    $('exportPreview').dataset.theme = 'nebula';
     $('exportPreviewImage').src = previewUrl;
     $('exportDownload').href = previewUrl;
     $('exportDownload').download = result.filename || '2000-traces-4096px.png';
     const megabytes = (Number(result.bytes || 0) / 1048576).toLocaleString('tr-TR', { maximumFractionDigits: 1 });
     write('exportPreviewMeta', `${result.width} × ${result.height} px · PNG · ${megabytes} MB`);
-    write('exportPreviewNote', theme === 'nebula' ? 'Tam kayıt · standart bakış · seçim vurgusu içermez' : 'Tam kayıt · düz görünüm · seçim vurgusu içermez');
+    write('exportPreviewNote', 'Tam kayıt · standart bakış · seçim vurgusu içermez');
     try {
       await $('exportPreviewImage').decode();
       if (previewUrl !== expectedUrl) return;
@@ -305,9 +300,8 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
   click('closeLibrary', () => setLibraryOpen(false));
   click('closeExportPreview', () => closeExportPreview());
   click('demo', onDemo);
-  click('nebulaView', () => onViewMode?.('nebula'));
+  click('home', onHome);
   click('orbitMotion', () => { setOrbitMotion(!orbitMotion); run(onOrbitMotion, orbitMotion); });
-  click('galaxyView', () => onViewMode?.('atlas')); click('recordView', () => onViewMode?.('ink'));
   click('readArtwork', () => setLegendOpen($('legendPanel').hidden));
   click('closeLegend', () => setLegendOpen(false));
   click('focus', () => setFocusMode(true)); click('focusReturn', () => setFocusMode(false));
@@ -322,16 +316,13 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
   $('speed').onchange = (event) => run(onSpeed, Number(event.target.value));
   click('export', async () => {
     if (exportPending || liveMode || !hasArtwork || !onExport) return;
-    const previewTheme = document.body.dataset.theme;
     setExportState('pending');
-    try { const result = await onExport(); await openExportPreview(result, previewTheme); setExportState('success'); }
+    try { const result = await onExport(); await openExportPreview(result); setExportState('success'); }
     catch (error) { setExportState('error', `Görsel kaydedilemedi: ${error?.message ?? error}`); }
   });
   $('demo').hidden = !onDemo;
-  $('nebulaView').hidden = !onViewMode;
+  $('home').hidden = !onHome;
   $('orbitMotionRow').hidden = !onOrbitMotion;
-  $('galaxyView').hidden = !onViewMode;
-  $('recordView').hidden = !onViewMode;
 
   window.addEventListener('keydown', (event) => {
     if ($('exportPreview').open) {
@@ -497,17 +488,14 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
       $('demo').hidden = !onDemo; setStats(message || 'Arşivden bir eser seçin veya örnek eseri keşfedin.'); setConnection('offline'); syncDisabled();
     },
     setViewMode(mode) {
-      el.dataset.view = mode;
-      document.body.dataset.theme = mode === 'ink' ? 'ink' : mode === 'nebula' ? 'nebula' : 'atlas';
-      $('nebulaView').setAttribute('aria-pressed', String(mode === 'nebula'));
-      $('galaxyView').setAttribute('aria-pressed', String(mode === 'atlas' || mode === 'galaxy'));
-      $('recordView').setAttribute('aria-pressed', String(mode === 'ink'));
-      $('nebulaLegend').hidden = mode !== 'nebula';
-      $('atlasLegend').hidden = mode === 'nebula';
-      $('orbitMotionRow').hidden = mode !== 'nebula' || !onOrbitMotion;
-      $('readArtwork').hidden = mode === 'record';
-      write('legendIntro', mode === 'nebula' ? 'Kayıtlı hareketlerden oluşan bir çekim alanı.' : 'Tek bir kayıt. İç içe geçen binlerce iz.');
-      if (mode === 'record') setLegendOpen(false);
+      // Compatibility for callers passing a live/legacy mode: the artwork now
+      // has one visual language, with the recording state owned by setLiveMode.
+      el.dataset.view = 'nebula';
+      document.body.dataset.theme = 'nebula';
+      $('nebulaLegend').hidden = false;
+      $('orbitMotionRow').hidden = !onOrbitMotion;
+      $('readArtwork').hidden = false;
+      write('legendIntro', mode === 'record' || mode === 'live' ? 'Katılımcıların hareketleriyle oluşan bir çekim alanı.' : 'Kayıtlı hareketlerden oluşan bir çekim alanı.');
     },
     setGestureState, setGestureSummary, setOrbitMotion,
     setExportState,
@@ -525,6 +513,7 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
     },
     setLiveMode(on) {
       liveMode = !!on; el.dataset.live = String(liveMode);
+      write('legendIntro', liveMode ? 'Katılımcıların hareketleriyle oluşan bir çekim alanı.' : 'Kayıtlı hareketlerden oluşan bir çekim alanı.');
       if (on) { seatInfo = null; setGestureState(null); setGestureSummary(null); write('workKicker', 'Canlı kayıt'); write('workName', 'Birlikte oluşan bir an'); write('workFormat', 'Katılımcılardan gelen canlı izler'); setConnection('live'); }
       else if ($('connection').dataset.state === 'live') setConnection('ready');
       syncDisabled(); if (libraryModel && !$('libPanel').hidden) drawLibrary();

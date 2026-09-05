@@ -6,7 +6,7 @@ import {
 } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { recordFromSource } from './recorder.js';
-import { sanitizeLabel } from './session.js';
+import { sanitizeLabel, DEFAULT_DURATION_MS } from './session.js';
 import { packSession, TYPE_CODES } from './viz-pack.js';
 import { listLibrary, readSessionMeta } from './library.js';
 import { loadEnv } from './env.js';
@@ -58,7 +58,7 @@ const readBody = (req, limit = 1 << 20) => new Promise((resolvBody, reject) => {
 });
 
 export function createControlServer({
-  sessionsDir, sourceFactory, durationMs = 90000,
+  sessionsDir, sourceFactory, durationMs = DEFAULT_DURATION_MS,
   packsDir = null, autoPack = false,
 }) {
   let phase = 'IDLE'; // mirrors session states between runs
@@ -84,7 +84,7 @@ export function createControlServer({
 
   const compact = (rec) => ({
     z: rec.zone, s: rec.seatNumber, t: rec.tMs, k: TYPE_CODES[rec.eventType] ?? 0,
-    f: rec.finger ?? 0, l: rec.line ?? 0, u: rec.u, v: rec.v,
+    f: rec.finger ?? null, l: rec.line ?? 0, u: rec.u, v: rec.v,
   });
 
   const rosterFromSnapshot = (raw) => {
@@ -117,7 +117,7 @@ export function createControlServer({
   });
 
   // The take being recorded (or packed right after) must never be packed over
-  // or deleted from under the recorder — the 90 s show artifact is sacred.
+  // or deleted from under the recorder before its durable output is complete.
   const busySessionFile = () => {
     const sid = current?.sessionId ?? finalizing?.sessionId ?? null;
     return sid === null ? null : `${sid}.jsonl`;

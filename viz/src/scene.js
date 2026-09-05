@@ -17,12 +17,10 @@ export function createScene(canvas) {
   const tiltListeners = new Set();
   const setTheme = (mode) => {
     pipeline.setTheme(mode);
-    renderer.setClearColor(mode === 'ink'
-      ? new THREE.Color().setRGB(0.88, 0.855, 0.805)
-      : new THREE.Color().setRGB(0.0015, 0.0022, 0.0030));
+    renderer.setClearColor(new THREE.Color().setRGB(0.0015, 0.0022, 0.0030));
     revision++;
   };
-  setTheme('atlas');
+  setTheme('nebula');
   const fitCamera = () => {
     const aspect = viewW / viewH;
     const frame = presentation ? 70 : viewW < 700 ? 260 : 190;

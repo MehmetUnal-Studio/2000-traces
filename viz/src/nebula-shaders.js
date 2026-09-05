@@ -174,23 +174,83 @@ export const CORE_FRAGMENT = /* glsl */ `
   uniform float uTime;
   uniform float uDuration;
   uniform float uOrbit;
-  uniform float uHasData;
+  uniform float uTilt;
+  uniform float uActivity;
+  uniform float uAnimation;
   varying vec2 vUv;
+
+  float hash(vec2 p) {
+    p=fract(p*vec2(123.34,456.21));
+    p+=dot(p,p+45.32);
+    return fract(p.x*p.y);
+  }
+  float noise(vec2 p) {
+    vec2 cell=floor(p),f=fract(p);
+    f=f*f*(3.0-2.0*f);
+    return mix(mix(hash(cell),hash(cell+vec2(1.0,0.0)),f.x),
+      mix(hash(cell+vec2(0.0,1.0)),hash(cell+vec2(1.0,1.0)),f.x),f.y);
+  }
+  float plasma(vec2 p) {
+    return noise(p)*0.57+noise(p*2.07+17.4)*0.29+noise(p*4.13-8.2)*0.14;
+  }
+  float gaussian(float distance,float width) {
+    float d=distance/max(width,0.0001);
+    return exp(-d*d);
+  }
   void main() {
     vec2 p=vUv-0.5;
     float radius=length(p);
-    float angle=atan(p.y,p.x);
-    float phase=uOrbit+uTime/max(uDuration,1.0)*3.45575191895;
+    if(radius>0.47) discard;
+    float flow=sqrt(clamp(uActivity,0.0,1.0));
+    float phase=uOrbit+uTime/max(uDuration,1.0)*3.45575191895+uAnimation*0.18;
+    float angle=atan(p.y,p.x)-phase;
+
+    // The black horizon remains spherical; the emitting torus follows the
+    // inclination and roll of the recorded gesture field around it.
+    vec2 plane=mat2(0.9689124217,0.2474039593,-0.2474039593,0.9689124217)*p;
+    float inclination=0.6981317008+uTilt;
+    plane.y/=max(0.23,abs(cos(inclination)));
+    float diskRadius=length(plane);
+    float diskAngle=atan(plane.y,plane.x)-phase;
+    float bend=0.04/(0.12+max(0.0,radius-0.205));
+    vec2 orbit=vec2(cos(diskAngle+bend),sin(diskAngle+bend));
+    float cloud=plasma(orbit*4.5+vec2(diskRadius*31.0-uAnimation*0.11,uAnimation*0.07));
+    float detail=plasma(orbit*13.0+vec2(diskRadius*80.0+uAnimation*0.08,-uAnimation*0.06));
+
+    float majorRadius=0.255+(cloud-0.5)*(0.010+flow*0.008);
+    float tubeWidth=0.030+flow*0.015;
+    float tube=gaussian(diskRadius-majorRadius,tubeWidth);
+    float tubeSide=clamp((diskRadius-majorRadius)/tubeWidth,-1.0,1.0);
+    vec3 normal=vec3(normalize(plane+vec2(0.00001))*tubeSide,sqrt(max(0.0,1.0-tubeSide*tubeSide)));
+    float lighting=0.32+0.68*max(0.0,dot(normal,normalize(vec3(-0.45,0.6,0.9))));
+    float approaching=pow(0.5+0.5*sin(diskAngle+phase+0.7),2.0);
+    float turbulent=0.14+cloud*0.67+pow(detail,4.0)*0.72;
+    float hotStrands=pow(0.5+0.5*sin(diskRadius*670.0+cloud*12.0-phase*10.0),8.0);
+    float torus=tube*turbulent*lighting*(0.16+flow*0.32);
+    torus+=tube*hotStrands*detail*(0.015+flow*0.060);
+
+    // A narrow photon arc and a displaced secondary arc suggest bent light;
+    // the procedural texture only describes plasma, never additional data.
+    float aa=max(fwidth(radius)*0.7,0.0011);
+    float photonRadius=0.208+(cloud-0.5)*0.0014;
+    float photon=gaussian(radius-photonRadius,aa+0.0006+flow*0.0008);
+    float secondary=gaussian(radius-0.218,0.0024)*(0.2+approaching*0.8);
+    float arcNoise=plasma(vec2(cos(angle),sin(angle))*9.0+uAnimation*0.08);
+    photon*=0.42+arcNoise*0.62;
+    float arc=(photon*(0.55+approaching*1.2)+secondary*0.22)*(0.65+flow*0.95);
+    float scattered=gaussian(radius-0.238,0.048)*(0.015+flow*0.033)*(0.30+cloud*0.7);
+    scattered+=gaussian(diskRadius-0.29,0.061)*detail*(0.016+flow*0.032);
+
+    vec3 cool=vec3(0.10,0.29,0.50),gold=vec3(1.0,0.43,0.095);
+    vec3 plasmaColor=mix(cool,gold,0.34+approaching*0.66);
+    vec3 photonColor=mix(vec3(0.35,0.65,0.90),vec3(1.0,0.72,0.33),approaching);
+    vec3 light=plasmaColor*torus+photonColor*arc+mix(cool,gold,cloud)*scattered;
     float core=1.0-smoothstep(0.195,0.206,radius);
-    float rim=exp(-pow((radius-0.208)/0.0028,2.0));
-    float haze=exp(-pow((radius-0.216)/0.023,2.0));
-    float crescent=pow(0.5+0.5*sin(angle+0.7),3.0);
-    float striation=0.83+0.17*sin(angle*9.0-phase*0.8);
-    float light=(rim*(0.16+crescent*0.65)+haze*0.10)*striation*uHasData;
-    light*=smoothstep(0.200,0.209,radius);
-    vec3 color=mix(vec3(0.12,0.38,0.64),vec3(1.0,0.52,0.17),crescent);
-    float alpha=max(core,clamp(light,0.0,0.92));
-    if(alpha<0.0005) discard;
-    gl_FragColor=vec4(color*light*1.4,alpha);
+    float reveal=smoothstep(0.200,0.209,radius);
+    light*=reveal;
+    float alpha=max(core,clamp(tube*0.12+scattered*0.20,0.0,0.24)*reveal);
+    // Premultiplied emission preserves underlying dust through the optically
+    // thin corona, while the central sphere truly occludes the background.
+    gl_FragColor=vec4(light,alpha);
   }
 `;

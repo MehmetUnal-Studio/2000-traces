@@ -5,7 +5,7 @@ import { exportStill } from '../viz/src/export-still.js';
 test('print composition uses the final pipeline and restores every interactive uniform on GPU failure', async () => {
   const values = { uDuration: 90000, uTime: 31000, uPointScale: 300, uPointMax: 32,
     uSelLane: 19, uReplaying: 1, uSelRow: 4, uSelColumn: 76, uHoverRow: 5,
-    uHoverColumn: 10, uHoverLane: 7, uTilt: 0.5, uOrbit: 1.3, uInk: 1 };
+    uHoverColumn: 10, uHoverLane: 7, uTilt: 0.5, uOrbit: 1.3, uAnimation: 13, uActivity: 0.72 };
   const uniforms = Object.fromEntries(Object.entries(values).map(([key, value]) => [key, { value }]));
   const playheadMat = { opacity: 0.55 };
   const previousTarget = {};
@@ -17,14 +17,15 @@ test('print composition uses the final pipeline and restores every interactive u
     readRenderTargetPixels: () => { throw new Error('GPU readback unavailable'); },
   };
   await assert.rejects(exportStill({ renderer, scene: {}, uniforms, playheadMat,
-    sessionId: 'test', mode: 'ink', size: 4,
+    sessionId: 'test', mode: 'nebula', activity: 0.35, size: 4,
     render(target, camera) {
       rendered = true;
       assert.equal(target.width, 4);
       assert.equal(target.samples, 0, 'pipeline owns antialiasing');
       assert.equal(camera.left, -1.12, 'print includes the full engraved outer rim');
       assert.equal(uniforms.uTime.value, 90000);
-      assert.equal(uniforms.uInk.value, 1);
+      assert.equal(uniforms.uAnimation.value, 0);
+      assert.equal(uniforms.uActivity.value, 0.35);
       assert.equal(uniforms.uTilt.value, 0);
       assert.equal(uniforms.uOrbit.value, 0, 'print is independent of ambient orbital animation');
       assert.equal(playheadMat.opacity, 0);

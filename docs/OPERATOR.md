@@ -11,7 +11,9 @@ npm ci
 npm run viz
 ```
 
-[Örnek evreni aç](http://127.0.0.1:5174/?demo=1). Bu mod bellekte üretilen, 2.000 katılımcılı ve 90 saniyelik sentetik veri kullanır. Kayıt açmaz, ham oturum yazmaz ve upstream SSE bağlantısı gerektirmez. Arşiv boşsa görselleştirici örneği kendiliğinden gösterir; gerçek kayıt her zaman kullanıcı eylemi gerektirir.
+[Ana adres](http://127.0.0.1:5174/), **Stars of The Year / Senenin Yıldızları** girişini açar. **Deneyime gir** arşivdeki esere, arşiv boşsa örneğe geçer; **Kayıtları keşfet** kütüphaneyi açar. **Canlı kayıt başlat** kayıt akışını başlatır. Üstteki **Başlangıç** giriş ekranına geri döner; devam eden kaydı durdurmaz. Sunucuda zaten kayıt sürüyorsa sade ana adres doğrudan o oturuma katılır.
+
+[Örnek evren bağlantısı](http://127.0.0.1:5174/?demo=1), girişi atlayarak bellekte üretilen, 2.000 katılımcılı ve **90 saniyelik** sentetik veriyi açar. Kayıt başlatmaz, ham oturum yazmaz ve upstream SSE bağlantısı gerektirmez. Yeni kayıtların **180 saniyelik** varsayılan süresi bu örneğin veya eski kayıtların süresini değiştirmez.
 
 `npm run build` uygulamayı `dist-viz/` içine üretir; kayıt paketlerini bu dizine kopyalamaz. `npm run preview` derlenmiş uygulamayı sunar. Yerel dev ve preview sunucuları `/packs/` isteklerini `viz/public/packs/` dizininden okur; taşınabilir `dist-viz/` tek başına yerel kayıtları içermez.
 
@@ -50,10 +52,10 @@ Durum akışı: `IDLE → ARMED → RECORDING → FINALIZING → COMPLETE`.
 1. İsteğe bağlı **Oturum etiketi** girin. En fazla 40 karakter; harf, rakam, boşluk, `_` ve `-` desteklenir. API de bu sınırı uygular.
 2. **ARM · Hazırla** düğmesi kaydı hazırlar. Bu noktada veri kaydedilmez. **DISARM · İptal** ile beklemeye dönebilirsiniz.
 3. **Kaydı başlat** düğmesi tek bir oturum başlatır. Durum sunucudan onaylandıktan sonra **KAYDEDİLİYOR** görünür.
-4. Normal kayıt penceresi 90 saniyedir. **Durdur** düğmesi erken bitirir; duraklat/devam et yoktur.
+4. Yeni kayıtların varsayılan penceresi 180 saniyedir (3 dakika). Önceden kaydedilen oturumların süreleri değişmez. **Durdur** düğmesi erken bitirir; duraklat/devam et yoktur.
 5. **PAKETLENİYOR** sırasında yeni kayıt veya durdurma komutu verilemez. **TAMAMLANDI** durumunda ham kayıt arşivde görünür; görsel paket hazırsa ayrıca belirtilir.
 
-Zaman göstergesi sunucunun oturum başlangıç/bitiş zamanlarından hesaplanır. Sayfa kayıt ortasında yeniden açıldığında aynı oturum kimliği, etiketi ve zaman bilgisi alınır. Kayıt sırasında olay akışı susarsa sonlandırma zamanlayıcısı 90 saniyeye ek 5 saniyelik toleransla kaydı kapatır; dolayısıyla süre göstergesi 01:30'u kısa süre aşabilir.
+Zaman göstergesi sunucunun oturum başlangıç/bitiş zamanlarından hesaplanır. Sayfa kayıt ortasında yeniden açıldığında aynı oturum kimliği, etiketi ve zaman bilgisi alınır. Kayıt sırasında olay akışı susarsa sonlandırma zamanlayıcısı 180 saniyeye ek 5 saniyelik toleransla kaydı kapatır; dolayısıyla süre göstergesi 03:00'ı kısa süre aşabilir.
 
 Veri kartı, **kayda giren katılımcı**, **kaydedilen olay**, **alınan**, **hatalı**, **geç / erken**, **tekrar** sayılarını ayrı gösterir. Kayıt bittiğinde kart **SON OTURUM** olarak işaretlenir; eski sayılar yeni bir kayıt gibi sunulmaz.
 
@@ -61,14 +63,14 @@ Panel durumunu yaklaşık saniyede bir, arşivi beş saniyede bir yeniler. Bağl
 
 ## 4. Görselleştirici
 
-- **Nebula** kayıtlı X/Y hareketlerini bir sarmal çekim alanında yeniden gösterir. Seçilen izin koordinatları, olay zamanı ve varsa dokunuş kimliği inceleme panelinde görünür. **Yörünge hareketi** görsel bir hareket seçeneğidir; yeni canlı veri alındığını belirtmez.
-- **Atlas / Mürekkep** aynı veri geometrisinin ışıklı ve tek renk baskı yorumlarıdır. Hücreler katılımcı gruplarını ve zaman aralıklarını özetler; dış çubuklar bireysel katılımcıları gösterir. Ayrıntılı eşlemeler [Eseri okumak](ARTWORK.md) belgesindedir.
+- **Nebula**, canlı kayıt ve arşiv oynatımı için tek görünümdür. X yörüngenin açısal kıvrımını, Y yarıçap ve derinliği değiştirir. Seçilen izin koordinatları, olay zamanı ve varsa dokunuş kimliği inceleme panelinde görünür. **Yörünge hareketi** ek görsel harekettir; yeni canlı veri alındığını belirtmez.
+- Akış yoğunluğu son nota başlangıcı ve hareket olaylarının hızından hesaplanır; merkez çevresindeki ışık ve korona buna tepki verir. Akış susunca yoğunluk yaklaşık bir saniyelik üstel sönümle azalır; bağlantı ve durum mesajları hareket üretmez. Canlı görünüm ve arşiv aynı sabit ölçeği kullanır; geri sarma önceki oynatmanın yoğunluğunu taşımaz. Bu değer akustik enerji ölçümü değildir. Ayrıntılı eşlemeler [Eseri okumak](ARTWORK.md) belgesindedir.
 - Oynatma, zaman çizelgesi ve hız kontrolü kayıtların zaman içindeki gelişimini gösterir.
-- Bir hücreye tıklayarak zaman diliminin sayımlarını, dış çubuktan katılımcı bilgilerini inceleyin. Tekerlek veya iki parmakla yakınlaşın; sürükleyerek kaydırın. **Eseri oku → Kabartı / eğim** ya da Shift + dikey sürükleme yüzeyi eğer. **F** görünümü sıfırlar. **Esc** veya boş alana tıklamak seçimi temizler; geri sarma da gelecekteki verinin seçimini temizler.
+- Bir ize tıklayarak katılımcıyı seçin ve X/Y hareketini inceleyin. Tekerlek veya iki parmakla yakınlaşın; sürükleyerek kaydırın. **Eseri oku → Bakış / eğim** ya da Shift + dikey sürükleme üç boyutlu yapının bakışını değiştirir. Eğim ve yörünge denetimleri canlı kayıtta da kullanılabilir. **F** görünümü sıfırlar. **Esc** veya boş alana tıklamak seçimi temizler. Geri sarma, seçili katılımcının geçmişteki konumunu gösterir; henüz gerçekleşmemiş koordinatları göstermez.
 - **Sahne modu** arayüzü gizler; **H** veya arayüzü göster düğmesi geri getirir.
-- **Görseli kaydet** eserin tamamlanmış hâlini 4096 × 4096 PNG önizlemesi olarak hazırlar. Önizlemedeki **PNG'yi indir** bağlantısı dosyayı kaydeder. Çıktı kullanıcının kamera konumunu, ek eğimini, arayüzü ve seçim vurgularını içermez; Nebula standart eğik bakışını korur, Atlas / Mürekkep düz gösterilir.
+- **Görseli kaydet** eserin tamamlanmış hâlini 4096 × 4096 PNG önizlemesi olarak hazırlar. Önizlemedeki **PNG'yi indir** bağlantısı dosyayı kaydeder. Çıktı kullanıcının kamera konumunu, ek eğimini, arayüzü ve seçim vurgularını içermez; Nebula standart eğik bakışını korur. Canlı kayıt sürerken dışa aktarma kapalıdır.
 
-Görselleştiricinin **Canlı kayıt** kontrolü aynı kayıt API'sini kullanır. Önce sunucu durumu okunur, yerel canlı SSE bağlantısı açılır, ardından arm/start akışı çalışır. Mevcut eser, sunucudan `RECORDING` onayı gelmeden kaldırılmaz. Sade ana adres açıldığında sunucuda zaten kayıt sürüyorsa görselleştirici o kayda katılır; ikinci bir kayıt başlatmaz. `?pack=...` ve `?demo=1` bağlantıları belirtilen arşiv/örnek eseri açar. Seçilen eser ve Nebula/Atlas/Mürekkep tercihi URL'de korunur.
+Görselleştiricinin **Canlı kayıt** kontrolü aynı kayıt API'sini kullanır. Önce sunucu durumu okunur, yerel canlı SSE bağlantısı açılır, ardından arm/start akışı çalışır. Mevcut eser, sunucudan `RECORDING` onayı gelmeden kaldırılmaz. `?pack=...` ve `?demo=1` bağlantıları giriş ekranını atlayarak belirtilen arşiv/örnek eseri açar. Seçilen eser URL'de korunur; URL kaydı başka bir makineye taşımaz.
 
 Boşluk tuşu kaydı durdurmaz; oynatma kontrolleri arşiv içindir. Kayıt kontrolü klavyeyle odaklandığında Enter, düğmenin normal başlat/durdur eylemini uygular. Kayıt bittiğinde paketleme durumu görünür ve oluşan pakete geçilir. Paket yükleme başarısızsa hata görünür; önceki açılmış eser korunur.
 
@@ -102,3 +104,5 @@ Paketleyici `manifest.json`, ikili veri dosyaları ve `index.json` üretir. Yeni
 - Testler fixture ve yerel sunucularla çalışır. Test/build başarısı gerçek upstream bağlantısı, venue yükü veya hedef GPU'da gösteri kabulü anlamına gelmez.
 
 Geliştirme doğrulaması: `npm run check`. Uygulama kaynak haritası ve diğer komutlar için [README](../README.md).
+
+Girişin yaratıcı bağlamı: Yıldız Holding'in [10.04.2025 tarihli Senenin Yıldızları duyurusu](https://www.medyamerkezi.yildizholding.com.tr/tr/basin-bultenleri/senenin-yildizlari-17nci-kez-odullendirildi). Kapak, mevcut deneyime yıl veya tören sıra numarası atamaz.

@@ -77,6 +77,26 @@ test('events past durationMs are late; malformed and duplicates are counted', ()
   assert.equal(ss.stats().stored, 2);
 });
 
+test('new sessions accept the full three-minute boundary and finalize with its duration', () => {
+  let clock = 5000;
+  const ss = createSession({ sessionId: 'three-minutes', visualSeed: 1, now: () => clock });
+  assert.equal(ss.meta().durationMs, 180000);
+  ss.arm(); ss.start();
+  assert.equal(ss.ingest(NOTE(0, 1, 1000), 0).accepted, true);
+  assert.equal(ss.ingest(NOTE(0, 1, 91001), 90001).accepted, true, 'new recordings continue beyond the historical 90 s window');
+  assert.equal(ss.ingest(NOTE(0, 1, 181000), 180000).accepted, true, 'the exact event-time boundary is included');
+  assert.deepEqual(ss.ingest(NOTE(0, 1, 181001), 180001), { accepted: false, reason: 'past-duration' });
+  clock += 180000;
+  ss.stop();
+  assert.deepEqual(ss.ingest(NOTE(0, 1, 181000), 180002), { accepted: false, reason: 'after-stop' });
+  const done = ss.finalize();
+  assert.equal(ss.state(), 'COMPLETE');
+  assert.equal(done.durationMs, 180000);
+  assert.equal(done.endedAtLocalMs - done.startedAtLocalMs, 180000);
+  assert.equal(done.events, 3);
+  assert.equal(done.stats.late, 2);
+});
+
 test('events whose ts precedes the anchor are rejected and counted early', () => {
   const ss = createSession({ sessionId: 't', visualSeed: 1 });
   ss.arm(); ss.start();

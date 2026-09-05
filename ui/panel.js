@@ -72,7 +72,7 @@ function renderStatus(next) {
   else if (next.state === 'COMPLETE' && next.packName) description = 'Oturum ve görselleştirme paketi hazır. Ham kayıt aşağıdaki arşivde.';
   else if (next.state === 'COMPLETE' && !next.packError) description = 'Oturum kapandı. Ham kayıt arşivde; görsel paket henüz yok.';
   setText('state-description', description);
-  const duration = Number.isFinite(next.durationMs) && next.durationMs > 0 ? next.durationMs : 90000;
+  const duration = Number.isFinite(next.durationMs) && next.durationMs > 0 ? next.durationMs : 180000;
   const elapsed = Number.isFinite(next.startedAtLocalMs)
     ? Math.max(0, (next.endedAtLocalMs ?? Date.now()) - next.startedAtLocalMs) : 0;
   setText('elapsed', clock(elapsed));

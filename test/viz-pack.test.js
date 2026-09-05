@@ -13,7 +13,7 @@ const FIXTURE = new URL('../captures/fixture-small.sse.txt', import.meta.url).pa
 async function makeSession(dir, opts = {}) {
   const out = join(dir, 'session.jsonl');
   const summary = await recordFromSource(fileSource(FIXTURE), {
-    outPath: out, sessionId: 'pack-test', visualSeed: 7, source: 'fixture', ...opts,
+    outPath: out, sessionId: 'pack-test', visualSeed: 7, source: 'fixture', durationMs: 90000, ...opts,
   });
   return { out, summary };
 }

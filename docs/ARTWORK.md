@@ -1,70 +1,60 @@
 # Eseri okumak
 
-2000 TRACES, bir kayıt oturumundaki ses ve hareket olaylarını etkileşimli bir veri eserine dönüştürür. Varsayılan **Nebula**, kaydedilmiş X/Y hareketlerini sarmal bir çekim alanına yerleştirir. **Atlas** ve **Mürekkep**, aynı kaydın gruplara ve zaman dilimlerine ayrılmış dairesel özetidir; bu iki görünüm aynı geometriyi ışıklı veya tek renk baskı yorumuyla gösterir.
+2000 TRACES, katılımcıların nota ve X/Y hareket olaylarını etkileşimli bir esere dönüştürür. **Nebula**, canlı kayıt ve arşiv oynatımı için tek görünümdür: veriler karanlık bir merkezin çevresinde kıvrılır; derinlik, ince bağlantılar ve ışık katmanları ortak bir çekim alanı oluşturur.
 
-## Nebula ve kayıtlı hareket
+## Giriş ve keşif
 
-| İşaret | Verideki karşılığı |
+Ana adres, **Stars of The Year / Senenin Yıldızları** girişini açar. Altın gezegen ufku ve yıldız alanı kodla üretilmiş bir kapak görselidir; katılımcı verisi değildir. **Deneyime gir**, **Canlı kayıt başlat** ve **Kayıtları keşfet** ayrı eylemlerdir. **Başlangıç** girişe döner; devam eden kaydı durdurmaz. Sunucuda zaten kayıt sürüyorsa sade ana adres doğrudan bu oturuma katılır.
+
+- Bir ize dokunarak katılımcıyı seçin ve X/Y bilgisini inceleyin.
+- Sürükleyerek kaydırın; tekerlekle veya dokunmatik ekranda iki parmakla yakınlaşın.
+- **Shift + dikey sürükleme** ya da **Eseri oku → Bakış / eğim**, üç boyutlu yapıya farklı açılardan bakmayı sağlar. Eğim ve yörünge hareketi canlı kayıtta da kullanılabilir.
+- **F / ekrana sığdır** kaydırma, yakınlaşma ve ek eğimi sıfırlar. **Esc** seçimi / açık açıklamayı kapatır. **H** arayüzü gizler; H veya geri dönüş düğmesi arayüzü geri getirir.
+- Arşivde alt denetimlerle oynatın, zamanı seçin, hızı değiştirin veya son hâle dönün. Canlı kayıt sırasında zaman çizelgesi ve dışa aktarma kapalıdır.
+
+`?pack=kayit-adi` aynı yerel paketi, `?demo=1` sentetik örneği doğrudan açar. Bu adresler giriş ekranını atlar; kayıt dosyalarını başka bir makineye taşımaz. Örnek 2.000 katılımcılı, **90 saniyelik** bir çalışmadır. Yeni kayıtların varsayılan süresi **180 saniyedir**; örneğin ve eski kayıtların kendi süresi korunur.
+
+## Görsel ile veri arasındaki bağ
+
+| İşaret | Karşılığı |
 | --- | --- |
-| X ekseni | Kaydedilmiş yatay hareket değeri, yörüngenin açısal kıvrımını değiştirir. |
-| Y ekseni | Kaydedilmiş dikey hareket değeri, yörünge yarıçapını ve diskin kalınlığını değiştirir. |
-| Sarmaldaki ilerleme | Katılımcının olay zamanı, izleri içeri doğru sarar. Oynatma zamanı diskin yönelimini de belirler. |
-| İnce iz bağlantıları | Aynı katılımcının **bilinen aynı dokunuşuna** ait ardışık X/Y noktaları. Dokunuş kimliği bilinmeyen eski olaylar, uydurulmuş bir parmak çizgisine bağlanmaz. |
-| Mavi / altın ışık | Nebula'nın sanatsal ışık malzemesidir; müzik hattı, ses yüksekliği veya fiziksel enerji ölçümü değildir. |
+| X ekseni | Kaydedilmiş yatay değer, yörüngenin açısal kıvrımını değiştirir. |
+| Y ekseni | Kaydedilmiş dikey değer, yörünge yarıçapını ve derinliği değiştirir. |
+| Sarmaldaki ilerleme | Olay zamanı izleri içeri doğru sarar. Oynatma zamanı diskin yönelimini de belirler. Katılımcıya bağlı sabit yollar görsel düzeni oluşturur. |
+| İnce bağlantılar | Aynı katılımcının **bilinen aynı parmağına** ait ardışık X/Y noktalarıdır. Kişiler arasındaki bir sosyal bağı göstermez. |
+| Mavi / altın ışık | Sanatsal ışık malzemesidir; müzik hattı, ses yüksekliği veya fiziksel enerji ölçümü değildir. |
+| Merkezin çevresindeki korona | Son nota başlangıcı ve hareket olaylarının hızına tepki veren görsel ışıktır. Karanlık merkez, arkasında kalan noktaları örter. |
 
-**Eseri oku → Yörünge hareketi**, kaydedilmiş koordinatları değiştirmeyen ek görsel hareketi açıp kapatır. Bu hareket, yeni seyirci verisi alındığı anlamına gelmez.
+Canlı ve arşiv aynı koordinat eşlemesini ve Nebula malzemelerini kullanır. Üç boyutlu konumlar ile gölgelenme derinlik hissini oluşturur; bu, fiziksel bir galaksi veya kara delik simülasyonu değildir. Koronanın prosedürel dokusu ek veri noktaları üretmez.
 
-Bir izi seçtiğinizde X/Y okuması, olay zamanı ve varsa dokunuş kimliği inceleme panelinde görünür. Küçük koordinat alanı, en fazla 64 kayıtlı iz örneğini gösterir; eksik koordinatlar `—` olarak kalır. Gösterilen değerler yeni bir canlı akış iddiası taşımaz.
+**Akış yoğunluğu**, yalnız gerçekleşmiş nota başlangıcı ve hareket olaylarından hesaplanır. Her olay sönümlenen olay/saniye hızına katkı verir; sessizlik yaklaşık bir saniyelik üstel sönüm oluşturur. Bağlantı, durum ve nota bitişi mesajları yoğunluk eklemez. Canlı ve arşiv aynı sabit ölçeği kullanır. İleri / geri zaman seçimi ilgili geçmişi yeniden örnekler; sonraki olayları veya önceki oynatmanın yoğunluğunu taşımaz.
 
-İleri / geri zaman seçimi, seçili katılımcının her bilinen parmağı için son kayıtlı konumu bulur; ara koordinat üretmez. Nota bitişi, bağlantı kesilmesi, eksik koordinat veya 1,2 saniyeden uzun veri boşluğu çizgiyi keser. Son konum gerekirse görünür kalır ve etkin bir jest olarak etiketlenmez.
+**Eseri oku → Yörünge hareketi**, veriyi değiştirmeyen ek dönüşü açıp kapatır. Bu hareket ve koronanın doku animasyonu yeni seyirci verisi alındığı anlamına gelmez. Azaltılmış hareket tercihi ek yörünge hareketini varsayılan olarak kapatır.
+
+## Kayıtlı X/Y'yi incelemek
+
+Bir izi seçtiğinizde X/Y, olay zamanı ve varsa parmak kimliği inceleme panelinde görünür. Küçük koordinat alanı en fazla **64 gerçek iz örneğini** gösterir. Eksik koordinatlar `—` olarak kalır; gösterilen değerlerin üzerine gelmek yuvarlanmamış sayı değerini verir.
+
+Arşivde ilk seçim, tıklanan olayın kendi değerlerini gösterir. Oynatma veya zaman seçimi ardından seçili katılımcının ilgili parmağının son kayıtlı konumu izlenir; ara koordinat üretilmez. Nota bitişi, bağlantı kesilmesi, eksik koordinat veya **1,2 saniyeden uzun** veri boşluğu çizgiyi keser. Son konum gerekirse görünür kalır ve etkin bir jest olarak etiketlenmez. Dokunuş kimliği bilinmeyen olaylar tekil noktalardır; uydurulmuş bir parmak çizgisine bağlanmaz.
 
 X/Y kaynağı eser bilgisinde belirtilir:
 
-- **X/Y kayıt mevcut:** `gestures.bin` yan dosyası, ham JSONL'de bulunan X, Y, zaman ve dokunuş bilgisini Float64 olarak taşır; eksik alanlar ayrıca korunur.
-- **Eski paket · 16-bit X/Y:** eski `events.bin` dosyasında U ve V zaten vardır. Bu değerler nicemlenmiştir; dokunuş kimliği ve bir sıfırın gerçekten kaydedilmiş değer mi, eski eksik-alan varsayımı mı olduğu ayırt edilemez.
+- **X/Y kayıt mevcut:** `gestures.bin`, ham JSONL'de bulunan X, Y, zaman ve parmak bilgisini Float64 olarak taşır; eksik alanlar korunur.
+- **Eski paket · 16-bit X/Y:** eski `events.bin` içinde U ve V zaten bulunur. Bu değerler nicemlenmiştir; parmak kimliği ve bir sıfırın gerçek değer mi, eski eksik-alan varsayımı mı olduğu ayırt edilemez.
 - **Örnek X/Y verisi:** sentetik örnek kayıttır.
 
-Eski paketlerde X zaman bilgisinden türetilmez, Y başka bir eksenden uydurulmaz. Ham JSONL daha ayrıntılı koordinat ve dokunuş bilgisi içeriyorsa yeniden paketlemek bu bilgiyi yeni yan dosyaya taşır; ham kayıtta bulunmayan bilgi geri üretilemez.
+Eski paketlerde X zaman bilgisinden türetilmez, Y başka bir eksenden uydurulmaz. Ham JSONL daha ayrıntılı koordinat ve parmak bilgisi içeriyorsa yeniden paketlemek bunu yan dosyaya taşır; ham kayıtta bulunmayan bilgi geri üretilemez.
 
-Nebula, kayıt büyüklüğünden bağımsız olarak en fazla **230.000 gerçek nota / hareket örneği** çizer; nota başlangıçlarına ayrılan üst sınır 26.000'dir. Örnekler deterministik seçilir ve iki geçerli koordinatı bulunmayan olaylar nokta bulutuna eklenmez. En fazla 7.000 ışık halesi aynı örneklerin görsel katmanıdır; ek kayıt olayı değildir. En fazla **100.000 gerçek, aynı parmağa ait ardışık hareket bağlantısı** çizilir. Milyonlarca olayın tamamı ayrı GPU noktaları olarak gösterilmez. Seçili katılımcının X/Y oynatımı, görsel nokta örneklemesinden bağımsız olarak kayıt verisini okur.
+## Örnekleme ve sayım sınırları
 
-## Atlas / Mürekkep görsel karşılıkları
+Nebula en fazla **230.000 gerçek nota / hareket örneği**, **7.000 ışık halesi** ve **100.000 aynı bilinen parmağa ait ardışık hareket bağlantısı** tutar. Haleler mevcut örneklerin görsel katmanıdır; ek kayıt olayı değildir. İki geçerli koordinatı bulunmayan olaylar nokta bulutuna eklenmez.
 
-| İşaret | Verideki karşılığı |
-| --- | --- |
-| İç içe hücre halkaları | Katılımcı sırasına göre oluşturulan **en fazla 96 grup**, merkezden dışarı doğru yerleşir. Gruplar birden çok oturma bölgesini kapsayabilir. |
-| Hücre halkalarındaki açısal dilimler | Kayıt süresinin **360 eşit zaman aralığı**. Zaman tepeden başlar, saat yönünde ilerler. 90 saniyelik kayıtta her dilim 250 ms'dir. |
-| Hücrenin alanı, tonu ve kabartısı | O gruptaki nota başlangıcı + hareket sayısı, kaydın en yoğun hücresine oranlanır: `(aktivite / en yüksek aktivite)^0,60`. Alan, ışık ve kabartı bu değerden görsel eğrilerle türetilir. **Ses yüksekliği, akustik enerji veya duygu ölçümü değildir.** |
-| Atlas'taki hücre rengi | Yalnız **nota başlangıçları** arasındaki baskın müzik hattı. Nota içermeyen hareket hücreleri aktivitesini koruyarak nötr çizilir. Standart palet on nota hattını ayırır; diğer hat değerleri metaveride korunur ve nötr çizilir. Dış çubukların gövdesi nötrdür; uç rengi katılımcının baskın nota hattını taşır. Mürekkep'te renk ayrımı tek renk baskıya dönüşür. |
-| Dış çeperdeki işaretler | Açısal konum burada zamanı değil, katılımcı sırasını belirtir. Her katılımcının ayrı konumu vardır. Olay üretmiş katılımcılarda uzun çubuk toplam olay sayısını, küçük iç çubuk nota başlangıçlarının tüm olaylara oranını gösterir. Uzunluklar aynı kayıt içinde ölçeklenir. |
-| Merkezdeki bağlantılar | **Aynı katılımcının zaman sırasındaki ardışık nota başlangıçları**. Uçlar iki notanın zamanına bağlıdır. Eğrinin yolu bir görsel düzenleme tercihidir; kişiler arasında sosyal bağ veya nedensellik iddiası taşımaz. |
+Arşivde nota başlangıçlarına ayrılan nokta üst sınırı 26.000'dir; örnekler deterministik seçilir. Canlı görünümde artan akış sınırlı bir örnek havuzuna alınır. Paket tamamlanınca arşivin örnek seçimi farklı olabilir; kaynak koordinatlar ve görsel eşleme korunur. **Milyonlarca olayın tamamı ayrı GPU noktaları olarak gösterilmez.**
 
-Örnekte 2.000 katılımcı bulunur; gerçek bir kaydın çeperindeki katılımcı sayısı kendi manifestinden gelir. Henüz olay üretmemiş katılımcılar için ölçek işareti bulunur, aktivite çubuğu bulunmaz.
-
-## Keşfetmek
-
-- Nebula'da bir hareket izini seçerek kayıtlı X/Y değerlerini inceleyin. Atlas / Mürekkep'te bir hücreye dokunun: katılımcı aralığını, zaman dilimini, olay / nota / hareket sayılarını inceleyin. Dış çeperdeki bir çubuğa dokunarak o katılımcıyı seçin.
-- Sürükleyerek kaydırın; tekerlekle veya dokunmatik ekranda iki parmakla yakınlaşın.
-- **Shift + dikey sürükleme** ile kabartıya farklı açılardan bakın. **Eseri oku → Kabartı / eğim** aynı işlemi dokunmatik ekran ve klavyeyle de sağlar.
-- **F / ekrana sığdır** kaydırma, yakınlaşma ve eğimi sıfırlar. **Esc** seçimi / açık açıklamayı kapatır. **H** arayüzü gizler; H veya görünür geri dönüş düğmesi arayüzü geri getirir.
-- Alt denetimlerle oynatın, zamanı seçin, hızı değiştirin veya son hâle dönün. Arşivden başka bir kayıt açabilirsiniz.
-
-Seçtiğiniz eser ve görünüm sayfa adresine yazılır. Örneğin `?pack=kayit-adi&style=ink`, aynı yerel paketi Mürekkep görünümünde; `?demo=1&style=ink` örneği açar. Sayfayı yenilemek eser / görünüm seçimini korur; URL kayıt dosyalarını başka bir makineye taşımaz.
-
-## Atlas sayımları ve özetleme sınırları
-
-Kaydın bütün olayları taranır; hücre ve katılımcı sayımları örnekleme yapılmadan hesaplanır. Toplam olay sayısına bağlantı / yaşam döngüsü kayıtları da dahildir. Görsel aktivite hücreleri yalnız nota başlangıcı veya hareket içeren aralıklar için çizilir.
-
-İnceleme panelindeki **log yoğunluk**, `log1p(aktivite) / log1p(en yüksek aktivite)` oranıdır. Bu sayısal özet ile geometriyi süren üs eğrisi farklıdır; ikisi de aynı gerçek aktivite sayımlarından türetilir.
-
-GPU'da her olay için ayrı bir nokta tutulmaz: halkalar en fazla **96 × 360 = 34.560 hücreyle** sınırlandırılır. Katılımcı çubukları bireyseldir. Merkezde en fazla **5.000 gerçek ardışık nota geçişi**, tüm geçişler üzerinden eşit aralıklı ve deterministik olarak seçilir. Bu çizgiler bütün nota geçişlerini temsil etmez. Hücre sayımları bu bağlantı örneklemesinden etkilenmez.
-
-Oynatma bu özetleri açığa çıkarır: bir hücre, zaman dilimi tamamlandığında; bir bağlantı, ikinci nota gerçekleştiğinde; bir katılımcı çubuğu, o katılımcının son olayı geçildiğinde görünür. Bu nedenle oynatma, her olayın ayrı animasyonu değildir. Yoğunluklar tüm kayıt üzerinden ölçeklenir. Alan, uzunluk, parlaklık ve kabartı için uygulanan görsel eğriler ek ölçümler değildir; iki kaydın görsel parlaklığı tek başına mutlak bir aktivite karşılaştırması vermez.
-
-Canlı kayıt sürerken ayrı, artan veriyle çalışan görünüm kullanılır. Tam atlas kayıt tamamlanıp paket yüklendikten sonra oluşur. Örnek eser sentetik veridir; canlı kayıt başlatmaz ve gerçek bir performansın kanıtı değildir.
+Katılımcı / olay sayıları nokta sayısından türetilmez; kaynak oturum veya manifest sayımlarıdır. Toplam olay sayısı yaşam döngüsü mesajlarını da kapsar. Arşivde seçili katılımcının X/Y oynatımı ve akış yoğunluğu, görsel örneklemeden bağımsız olarak kayıt verisini okur. Canlı görselleştirme tamponları ham kayıt deposundan ayrıdır; işletim sınırları [operatör kılavuzunda](OPERATOR.md) bulunur.
 
 ## Görseli kaydetmek
 
-**Görseli kaydet**, seçili Nebula / Atlas / Mürekkep yorumunu **4096 × 4096 PNG** olarak hazırlar. Açılan önizlemede eseri inceleyin ve **PNG'yi indir** bağlantısıyla dosyayı kaydedin. Çıktı tüm kaydın tamamlanmış hâlidir; kullanıcının kamera kaydırması, yakınlaşması, ek eğimi, katılımcı seçimi, hover vurgusu ve arayüz içermez. Atlas / Mürekkep düz gösterilir; Nebula diskin standart eğik bakışını korur. Etkileşim durumu işlemden sonra geri yüklenir. Önizleme kapandığında geçici görsel belleği serbest bırakılır. Dışa aktarma kaydın JSONL veya paket dosyalarını değiştirmez.
+**Görseli kaydet**, tamamlanmış Nebula'yı **4096 × 4096 PNG** olarak hazırlar. Önizlemede eseri inceleyin ve **PNG'yi indir** bağlantısıyla dosyayı kaydedin. Çıktı tüm kayıt süresinin son hâlini ve o andaki kayıtlı akış yoğunluğunu kullanır; kullanıcının kamera kaydırması, yakınlaşması, ek eğimi, seçim vurgusu ve arayüzü içermez. Standart eğik bakış korunur. Etkileşim durumu işlemden sonra geri yüklenir. Önizleme kapandığında geçici görsel belleği serbest bırakılır; JSONL ve paket dosyaları değişmez.
 
-Uygulama kaynağı: [Nebula](../viz/src/nebula.js), [X/Y oynatımı](../viz/src/gesture-replay.js), [Atlas veri özeti](../viz/src/atlas-data.js), [Atlas geometri ve seçim](../viz/src/atlas.js), [görsel malzemeler](../viz/src/atlas-shaders.js), [PNG çıktısı](../viz/src/export-still.js). Kayıt ve kurtarma işlemleri için [operatör kılavuzuna](OPERATOR.md) bakın.
+Kaynaklar: [Nebula](../viz/src/nebula.js), [canlı Nebula](../viz/src/live-nebula.js), [görsel malzemeler](../viz/src/nebula-shaders.js), [X/Y oynatımı](../viz/src/gesture-replay.js), [akış yoğunluğu](../viz/src/flow-energy.js), [PNG çıktısı](../viz/src/export-still.js).

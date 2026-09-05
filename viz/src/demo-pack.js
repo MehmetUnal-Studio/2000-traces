@@ -61,7 +61,7 @@ export function createDemoPack({ laneCount = 2000, seed = 2000 } = {}) {
     }
     for (let i = 0; i < plan.notes; i++) {
       // Euclidean-style phrase placement on one shared 24-pulse score. Chords
-      // later shown by the atlas therefore come from actual repeated onsets.
+      // used by the artwork therefore come from actual repeated onsets.
       const pulse = Math.floor(i * 24 / plan.notes);
       const time = Math.round(pulse * PULSE_MS + 180 + (plan.zone % 3) * 90 + entrance * 140 + random() * 70);
       const swell = Math.sin(Math.PI * time / DURATION_MS) ** 2;

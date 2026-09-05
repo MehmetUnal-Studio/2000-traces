@@ -28,6 +28,7 @@ test('operator assets are available without starting a recording or exposing sou
   assert.equal(response.headers.get('cache-control'), 'no-store');
   const state = await response.json();
   assert.equal(state.state, 'IDLE');
+  assert.equal(state.durationMs, 180000);
   assert.equal(state.startedAtLocalMs, null);
   assert.equal(state.endedAtLocalMs, null);
   assert.equal(state.label, '');
@@ -84,6 +85,7 @@ test('arm/start/stop lifecycle over HTTP', async (t) => {
   }
   assert.equal(st.state, 'COMPLETE');
   assert.equal(st.stats.stored > 0, true);
+  assert.equal(st.durationMs, 180000);
 
   const sessions = await (await fetch(`${base}/api/sessions`)).json();
   assert.equal(sessions.length, 1);
@@ -205,6 +207,7 @@ test('live SSE hub: hello, roster, batches, completion with auto-pack', async ()
     'data: {"type":"snapshot","zones":{"0":{"1":{"lastSeen":1}},"2":{"7":{"lastSeen":1}}}}',
     'data: {"t":1,"z":0,"s":1,"l":3,"f":0,"uu":0.5,"vv":0.5,"ts":1000}',
     'data: {"t":3,"z":2,"s":7,"f":0,"uu":0.2,"vv":0.8,"ts":1050}',
+    'data: {"t":3,"z":0,"s":1,"uu":0.4,"vv":0.3,"ts":1200}',
     'data: {"t":2,"z":0,"s":1,"l":3,"f":0,"ts":1500}',
   ].map((l) => l + '\n\n').join(''));
 
@@ -244,8 +247,9 @@ test('live SSE hub: hello, roster, batches, completion with auto-pack', async ()
   const roster = frames.find((f) => f.kind === 'roster');
   assert.deepEqual(roster.roster, [{ z: 'A', s: 1 }, { z: 'C', s: 7 }]);
   const batches = frames.filter((f) => f.kind === 'batch').flatMap((f) => f.events);
-  assert.equal(batches.length, 3);
+  assert.equal(batches.length, 4);
   assert.deepEqual(batches[0], { z: 'A', s: 1, t: 0, k: 1, f: 0, l: 3, u: 0.5, v: 0.5 });
+  assert.deepEqual(batches[2], { z: 'A', s: 1, t: 200, k: 3, f: null, l: 0, u: 0.4, v: 0.3 }, 'missing finger identity must not become finger zero in the live viewer');
   const complete = frames.find((f) => f.kind === 'state' && f.state === 'COMPLETE');
   assert.equal(complete.participants, 2);
   assert.equal(complete.packName.startsWith('kayit-'), true);

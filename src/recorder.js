@@ -2,7 +2,7 @@
 import { createWriteStream, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { once } from 'node:events';
-import { createSession } from './session.js';
+import { createSession, DEFAULT_DURATION_MS } from './session.js';
 import { headerLine, eventLine, endLine } from './jsonl.js';
 
 // Drains an async source ({raw, arrivalMs}) into a session, streaming every
@@ -12,7 +12,7 @@ import { headerLine, eventLine, endLine } from './jsonl.js';
 // source just runs to completion (its data is already bounded).
 export async function recordFromSource(source, {
   outPath, sessionId, visualSeed, source: sourceLabel = 'unknown', label = '',
-  durationMs = 90000, stopAfterMs = null, now = Date.now, onProgress = null,
+  durationMs = DEFAULT_DURATION_MS, stopAfterMs = null, now = Date.now, onProgress = null,
   onSession = null, onEvent = null, onSnapshot = null,
 } = {}) {
   mkdirSync(dirname(outPath), { recursive: true });

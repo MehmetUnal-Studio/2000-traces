@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { createGestureReplay, readGesture, TYPE } from './gesture-replay.js';
+import { createPackFlowEnergy } from './flow-energy.js';
 import { DUST_VERTEX, DUST_FRAGMENT, ATMOSPHERE_VERTEX, ATMOSPHERE_FRAGMENT, FILAMENT_VERTEX, FILAMENT_FRAGMENT, CORE_VERTEX, CORE_FRAGMENT } from './nebula-shaders.js';
 
 const TAU=Math.PI*2;
@@ -13,6 +14,17 @@ const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
 const fract=(v)=>v-Math.floor(v);
 const lanePhase=(lane)=>fract((lane+1)*0.6180339887498949);
 const escapeHtml=(s)=>String(s).replace(/[&<>"']/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/** Shared archive/live material state. Time is milliseconds; animation is seconds. */
+export function createNebulaUniforms(durationMs=1) {
+  return {
+    uDuration:{value:Math.max(1,durationMs)},uTime:{value:0},uOrbit:{value:0},uTilt:{value:0},
+    uActivity:{value:0},uAnimation:{value:0},
+    uReplaying:{value:0},uSelLane:{value:-1},uHoverLane:{value:-1},
+    uPointScale:{value:500},uPointMax:{value:128},uHasData:{value:0},
+    uSelRow:{value:-1},uSelColumn:{value:-1},uHoverRow:{value:-1},uHoverColumn:{value:-1},
+  };
+}
 
 // A fixed, openly artistic coordinate system, not a physical galaxy model.
 // Time winds inward; the recorded horizontal gesture bends an orbit while
@@ -77,13 +89,17 @@ function sampleEvents(pack) {
   return {indices:Uint32Array.from(indices),totalMoves,totalNotes};
 }
 
-function makePointMaterial(uniforms,atmosphere=false) {
+export function makePointMaterial(uniforms,atmosphere=false) {
   return new THREE.ShaderMaterial({uniforms:{...uniforms,uAtmosphere:{value:atmosphere?1:0}},
-    vertexShader:DUST_VERTEX,fragmentShader:DUST_FRAGMENT,transparent:true,
-    depthWrite:false,depthTest:true,blending:THREE.AdditiveBlending});
+    vertexShader:atmosphere?ATMOSPHERE_VERTEX:DUST_VERTEX,
+    fragmentShader:atmosphere?ATMOSPHERE_FRAGMENT:DUST_FRAGMENT,transparent:true,
+    depthWrite:false,depthTest:true,blending:THREE.AdditiveBlending,
+    side:THREE.DoubleSide,forceSinglePass:true});
 }
 
-function makePoints(positions,data,sizes,uniforms,name,atmosphere=false) {
+// data = [timeMs, lane, isNoteOn, heat], sizes = [worldDiameter, radiance].
+// Atmosphere uses instanced quads; its other attributes share the same contract.
+export function makePoints(positions,data,sizes,uniforms,name,atmosphere=false) {
   if(atmosphere) {
     const quad=new THREE.PlaneGeometry(1,1);
     const geometry=new THREE.InstancedBufferGeometry();geometry.index=quad.index;
@@ -92,10 +108,7 @@ function makePoints(positions,data,sizes,uniforms,name,atmosphere=false) {
     geometry.setAttribute('aData',new THREE.InstancedBufferAttribute(data,4));
     geometry.setAttribute('aSize',new THREE.InstancedBufferAttribute(sizes,2));
     geometry.instanceCount=positions.length/3;
-    const material=new THREE.ShaderMaterial({uniforms:{...uniforms,uAtmosphere:{value:1}},
-      vertexShader:ATMOSPHERE_VERTEX,fragmentShader:ATMOSPHERE_FRAGMENT,transparent:true,
-      depthWrite:false,depthTest:true,blending:THREE.AdditiveBlending,side:THREE.DoubleSide,forceSinglePass:true});
-    const mesh=new THREE.Mesh(geometry,material);mesh.name=name;mesh.frustumCulled=false;mesh.renderOrder=0;
+    const mesh=new THREE.Mesh(geometry,makePointMaterial(uniforms,true));mesh.name=name;mesh.frustumCulled=false;mesh.renderOrder=0;
     return mesh;
   }
   const geometry=new THREE.BufferGeometry();
@@ -110,7 +123,7 @@ function makePoints(positions,data,sizes,uniforms,name,atmosphere=false) {
   return points;
 }
 
-function makeFilaments(pack,pairs,uniforms) {
+export function makeFilaments(pack,pairs,uniforms) {
   const count=pairs.length/2;
   const starts=new Float32Array(count*3),ends=new Float32Array(count*3),data=new Float32Array(count*4);
   for(let i=0;i<count;i++) {
@@ -119,6 +132,13 @@ function makeFilaments(pack,pairs,uniforms) {
     starts.set([a.x,a.y,a.z],i*3);ends.set([b.x,b.y,b.z],i*3);
     data.set([last.t,last.lane,lightTemperature(last,pack.manifest.durationMs),Math.min(1,Math.hypot(last.x-first.x,last.y-first.y)*4)],i*4);
   }
+  return makeFilamentSegments(starts,ends,data,uniforms);
+}
+
+// The live renderer can fill these bounded arrays directly without inventing
+// a pack. data = [secondEventTimeMs, lane, heat, normalizedXyDisplacement].
+export function makeFilamentSegments(starts,ends,data,uniforms,name='nebula-recorded-finger-filaments') {
+  const count=starts.length/3;
   const geometry=new THREE.InstancedBufferGeometry();
   geometry.setAttribute('position',new THREE.BufferAttribute(new Float32Array([0,-1,0,1,-1,0,1,1,0,0,1,0]),3));
   geometry.setIndex([0,1,2,0,2,3]);
@@ -129,18 +149,26 @@ function makeFilaments(pack,pairs,uniforms) {
   const material=new THREE.ShaderMaterial({uniforms,vertexShader:FILAMENT_VERTEX,fragmentShader:FILAMENT_FRAGMENT,
     transparent:true,depthWrite:false,depthTest:true,side:THREE.DoubleSide,forceSinglePass:true,blending:THREE.AdditiveBlending});
   const mesh=new THREE.Mesh(geometry,material);
-  mesh.frustumCulled=false;mesh.name='nebula-recorded-finger-filaments';mesh.renderOrder=1;
+  mesh.frustumCulled=false;mesh.name=name;mesh.renderOrder=1;
   return mesh;
 }
 
-function lightTemperature(gesture,durationMs) {
+export function createNebulaCore(uniforms) {
+  const material=new THREE.ShaderMaterial({uniforms,vertexShader:CORE_VERTEX,fragmentShader:CORE_FRAGMENT,
+    transparent:true,premultipliedAlpha:true,depthTest:false,depthWrite:false});
+  const core=new THREE.Mesh(new THREE.PlaneGeometry(1,1),material);
+  core.name='nebula-event-horizon';core.renderOrder=4;
+  return core;
+}
+
+export function lightTemperature(gesture,durationMs) {
   // A blue/gold light treatment, deliberately not the pack's musical line.
   // Older movement events have no reliable musical identity in that byte.
   const time=clamp(gesture.t/Math.max(1,durationMs),0,1);
   return clamp(0.18+0.67*Math.pow(time,1.65)+((gesture.x??0.5)-0.5)*0.18+((gesture.y??0.5)-0.5)*0.10+Math.sin(gesture.lane*0.13)*0.055,0,1);
 }
 
-function cloudEnvelope(gesture,durationMs) {
+export function cloudEnvelope(gesture,durationMs) {
   const time=gesture.t/Math.max(1,durationMs);
   const cloud=0.5+0.5*Math.sin(lanePhase(gesture.lane)*TAU*2+time*9.0+gesture.x*4.0);
   const shoulder=0.84+0.16*Math.sin((gesture.lane%3)*1.9+time*3.0+gesture.x*2.0+gesture.y);
@@ -150,12 +178,9 @@ function cloudEnvelope(gesture,durationMs) {
 export function buildNebula(pack,layout,{segmentPairs,replay}={}) {
   const durationMs=Math.max(1,pack.manifest.durationMs);
   const sampled=sampleEvents(pack),count=sampled.indices.length;
-  const uniforms={
-    uDuration:{value:durationMs},uTime:{value:durationMs},uOrbit:{value:0},uTilt:{value:0},
-    uReplaying:{value:0},uSelLane:{value:-1},uHoverLane:{value:-1},
-    uPointScale:{value:500},uPointMax:{value:128},uInk:{value:0},uHasData:{value:count?1:0},
-    uSelRow:{value:-1},uSelColumn:{value:-1},uHoverRow:{value:-1},uHoverColumn:{value:-1},
-  };
+  const flow=createPackFlowEnergy(pack);
+  const uniforms=createNebulaUniforms(durationMs);
+  uniforms.uTime.value=durationMs;uniforms.uHasData.value=count?1:0;
   const group=new THREE.Group();group.name='nebula-recorded-gesture-field';
   const positions=new Float32Array(count*3),data=new Float32Array(count*4),sizes=new Float32Array(count*2);
   const grid=Array.from({length:GRID*GRID},()=>[]);
@@ -192,8 +217,7 @@ export function buildNebula(pack,layout,{segmentPairs,replay}={}) {
   }
   const pairs=segmentPairs.subarray(0,NEBULA_LIMITS.segments*2);
   const filaments=makeFilaments(pack,pairs,uniforms);group.add(filaments);
-  const coreMaterial=new THREE.ShaderMaterial({uniforms,vertexShader:CORE_VERTEX,fragmentShader:CORE_FRAGMENT,transparent:true,depthTest:false,depthWrite:false});
-  const core=new THREE.Mesh(new THREE.PlaneGeometry(1,1),coreMaterial);core.name='nebula-event-horizon';core.renderOrder=4;group.add(core);
+  group.add(createNebulaCore(uniforms));
   const playheadMat=new THREE.LineBasicMaterial({transparent:true,opacity:0});
   const playhead=new THREE.Group();playhead.name='nebula-playback';playhead.visible=false;group.add(playhead);
   const context=()=>({time:uniforms.uTime.value,durationMs,orbit:uniforms.uOrbit.value,tilt:uniforms.uTilt.value});
@@ -227,10 +251,20 @@ export function buildNebula(pack,layout,{segmentPairs,replay}={}) {
   let hoverKey='',hoverStamp=0;
   const updateHover=(x,y)=>{const hit=inspect(x,y),key=hit?.key??'';if(key!==hoverKey){hoverKey=key;hoverStamp++;uniforms.uHoverLane.value=hit?.lane??-1;}return hit;};
   const setInspection=(hit)=>{uniforms.uSelRow.value=-1;uniforms.uSelColumn.value=-1;uniforms.uSelLane.value=hit?.lane??-1;};
-  const updatePlayhead=(time)=>{uniforms.uTime.value=clamp(time,0,durationMs);};
+  const setActivity=(value)=>{
+    uniforms.uActivity.value=Number.isFinite(value)?clamp(value,0,1):0;
+    return uniforms.uActivity.value;
+  };
+  const updatePlayhead=(time)=>{
+    uniforms.uTime.value=clamp(time,0,durationMs);
+    // The same causal activity function drives live input and archive seeks.
+    // Sampling has no history, so reversing or looping cannot retain a flare.
+    setActivity(flow.sample(uniforms.uTime.value).energy);
+  };
   let disposed=false;
   const dispose=()=>{if(disposed)return;disposed=true;group.traverse((child)=>{child.geometry?.dispose();child.material?.dispose();});playheadMat.dispose();grid.length=0;};
-  return {group,uniforms,playhead,playheadMat,updatePlayhead,inspect,updateHover,setInspection,dispose,
+  updatePlayhead(durationMs);
+  return {group,uniforms,playhead,playheadMat,updatePlayhead,activityAt:(time)=>flow.sample(time).energy,setActivity,inspect,updateHover,setInspection,dispose,
     setViewMode:()=>{},layout,kind:'nebula',grainCount:count,strokeSegments:pairs.length/2,
     sampledIndices:sampled.indices,segmentPairs:pairs,stats:{points:count,halos:haloPositions.length/3,segments:pairs.length/2,totalSegments,totalNotes:sampled.totalNotes,totalMoves:sampled.totalMoves},
     get hoverStamp(){return hoverStamp;}};

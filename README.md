@@ -2,7 +2,7 @@
 
 A collective memory of a performance. Audience gestures become a circular, explorable data artwork.
 
-2000 TRACES records a bounded audience-event stream, preserves it as JSONL, and turns each session into a deterministic Three.js / GLSL artwork. The default **Nebula** winds recorded phone X/Y gestures around a dark core, with smoky blue and amber filaments, depth and orbital movement. **Atlas** and **Mürekkep** retain the circular data and ink editions. All three support inspection, participant isolation, playback, an archive and 4K PNG export. The separate operator desk keeps recording controls and session health visible.
+2000 TRACES records a bounded audience-event stream, preserves it as JSONL, and turns each session into an explorable Three.js / GLSL artwork. **Nebula** is the single visual language for both live recording and archived playback: phone X/Y gestures wind around a dark core, with blue and amber filaments, three-dimensional depth and orbital movement. The corona responds to the recent note/movement rate. The viewer supports inspection, participant isolation, playback, an archive and 4K PNG export. The separate operator desk keeps recording controls and session health visible.
 
 ## Explore locally
 
@@ -13,11 +13,15 @@ npm ci
 npm run viz
 ```
 
-Open [the example artwork](http://127.0.0.1:5174/?demo=1). It uses a deterministic, synthetic 90-second session with 2,000 participants; it does not start a recording or write session files. The default viewer opens the example when no saved packs exist.
+Open [the entrance](http://127.0.0.1:5174/) for **Stars of The Year / Senenin Yıldızları**: a procedural starfield and glowing planetary horizon, with actions to enter the artwork, start recording or explore the archive. **Başlangıç** returns to this entrance without stopping a recording. If the server is already recording, the bare viewer address joins that session directly.
 
-In Nebula, X bends an orbit and Y changes its radius and thickness. Known fingers create paths through their actual recorded coordinates; gaps and releases break those paths. The X/Y inspector replays the source independently of the bounded GPU sample. New packs preserve full JavaScript-number precision, timestamps, missing values and finger identity in `gestures.bin`; legacy 16-bit packs remain readable. Raw JSONL can be repacked to recover fields the older visual binary omitted. Read [how to explore and interpret the artwork](docs/ARTWORK.md) for all three mappings, controls and limits, and [the X/Y acceptance report](docs/XY-VALIDATION.md) for the synthetic live test.
+[The direct example link](http://127.0.0.1:5174/?demo=1) bypasses the entrance. It uses a deterministic, synthetic **90-second** session with 2,000 participants; it does not start a recording or write session files. This example and historical takes retain their own duration. **New recordings default to 180 seconds (3 minutes).**
 
-The selected pack and style are retained in the page URL, so reloading preserves that choice. Use `?pack=<local-pack-name>&style=ink` for a saved artwork or [the ink example](http://127.0.0.1:5174/?demo=1&style=ink). These URLs refer to files on the same local installation.
+In Nebula, X bends an orbit and Y changes its radius and depth. Known fingers create paths through their actual recorded coordinates; gaps and releases break those paths. The X/Y inspector replays the source independently of the bounded GPU sample. New packs preserve full JavaScript-number precision, timestamps, missing values and finger identity in `gestures.bin`; legacy 16-bit packs remain readable. Raw JSONL can be repacked to recover fields the older visual binary omitted. Read [how to explore and interpret the artwork](docs/ARTWORK.md) for mappings, controls and limits, and [the X/Y acceptance report](docs/XY-VALIDATION.md) for the earlier synthetic live test.
+
+Use `?pack=<local-pack-name>` to open a saved artwork directly. Its selection is retained in the page URL; these URLs refer to files on the same local installation. Drag to pan, use the wheel or two fingers to zoom, and use **Shift + drag** or **Eseri oku → Bakış / eğim** to inspect the depth. These view controls also work during live recording.
+
+Flow intensity is causal: recent note/move events increase it, silence produces an approximately one-second exponential decay, and seeking samples the corresponding recorded history. Status messages do not add activity. The live view and archive share the same scale. Blue/amber material and the reactive corona are artistic lighting, not acoustic-energy measurements or a physical black-hole simulation; optional orbit motion does not imply incoming data.
 
 ## Record a performance
 
@@ -33,7 +37,7 @@ npm run panel
 npm run viz
 ```
 
-Open [the recording desk](http://127.0.0.1:8787/). Add an optional session label, choose **ARM · Hazırla**, then **Kaydı başlat**. A recording lasts up to its configured window, normally 90 seconds. The desk shows server-confirmed state, elapsed time, participant/event counts, and persistent error messages. Reloading a page does not restart or stop a recording. Opening the panel alone does not connect to the upstream stream.
+Open [the recording desk](http://127.0.0.1:8787/). Add an optional session label, choose **ARM · Hazırla**, then **Kaydı başlat**. A recording lasts up to its configured window, normally 180 seconds (3 minutes). The desk shows server-confirmed state, elapsed time, participant/event counts, and persistent error messages. Reloading a page does not restart or stop a recording. Opening the panel alone does not connect to the upstream stream.
 
 Completed raw takes appear in `sessions/`; automatic visual packs appear in `viz/public/packs/`. A pack failure leaves the raw JSONL available for a retry. The recording server binds only to `127.0.0.1`.
 
@@ -62,9 +66,11 @@ Completed raw takes appear in `sessions/`; automatic visual packs appear in `viz
 | `src/viz-pack.js`, `src/library.js` | Binary packs, manifest/index generation, inexpensive archive metadata |
 | `ui/` | Recording desk: accessible controls, server status, JSONL archive |
 | `viz/src/main.js`, `viz/src/hud.js` | Viewer coordination, playback, library, live view and interface |
-| `viz/src/atlas-data.js`, `viz/src/atlas.js` | Exact event summaries, circular artwork geometry and inspection |
+| `viz/src/cover.js` | Stars of The Year entrance, procedural wallpaper, focus and keyboard isolation |
 | `viz/src/nebula.js`, `viz/src/nebula-shaders.js` | Bounded gesture cloud, accretion filaments, depth, orbital motion and picking |
+| `viz/src/live-nebula.js` | Incremental live geometry using the same Nebula materials and coordinate mapping |
 | `viz/src/gesture-replay.js` | Original X/Y access, per-finger seek/loop state and gap-aware trails |
+| `viz/src/flow-energy.js` | Shared causal note/movement rate and activity response for live and archive |
 | `viz/src/` | Three.js rendering, materials, layout, demo generation and pack loading |
 | `test/` | Recorder, transport, server, pack and viewer regression coverage |
 
@@ -76,3 +82,5 @@ The data path is **upstream/file → recorder → JSONL → visual pack → view
 - Included fixtures and the example artwork support offline development. They do not establish venue readiness or prove a real performance capture.
 - CI runs the Node suite and production build on Node 22 and 24. Browser/GPU appearance and the venue stream still need hands-on acceptance on the target machine.
 - For operating limits and recovery, see [docs/OPERATOR.md](docs/OPERATOR.md). Historical handoff and implementation plans live under `docs/`; the running source defines current behavior.
+
+Creative context for the entrance: Yıldız Holding's [Senenin Yıldızları announcement, 10 April 2025](https://www.medyamerkezi.yildizholding.com.tr/tr/basin-bultenleri/senenin-yildizlari-17nci-kez-odullendirildi). The procedural cover does not assign a year or edition number to the current experience.

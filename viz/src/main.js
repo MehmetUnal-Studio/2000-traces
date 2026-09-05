@@ -1,16 +1,16 @@
 // viz/src/main.js
 import { loadPack, EVENT_RECORD_BYTES, TYPE } from './pack-loader.js';
-import { buildLayout } from './layout.js';
-import { buildAtlas } from './atlas.js';
+import { buildLayout, rosterLayout } from './layout.js';
+import { createCover } from './cover.js';
+import { DEFAULT_DURATION_MS } from '../../src/constants.js';
 import { buildNebula } from './nebula.js';
 import { createGestureReplay, readGesture } from './gesture-replay.js';
-import { createLiveDisc, rosterLayout } from './live-disc.js';
+import { createLiveNebula } from './live-nebula.js';
 import { createScene } from './scene.js';
 import { createTransport } from './transport.js';
-import { createHud, updateZoneLabels } from './hud.js';
+import { createHud } from './hud.js';
 import { exportStill } from './export-still.js';
 import { createDemoPack, DEMO_NAME } from './demo-pack.js';
-import { unprojectTracePoint } from './cosmic-projection.js';
 
 const RECORDER = 'http://127.0.0.1:8787';
 const EMPTY_LIBRARY_MSG = 'henüz kayıt yok — ● KAYIT ile başla';
@@ -42,20 +42,19 @@ let live = null;    // record mode: { es, disc, layout, laneOf, maxT, queue, dur
 let recPending = false; // set synchronously on KAYIT click, before any await
 let switchGen = 0;      // invalidates in-flight switchPack loads
 let packAbort = null;
-const requestedStyle = new URLSearchParams(location.search).get('style');
-let viewMode = ['atlas', 'ink'].includes(requestedStyle) ? requestedStyle : 'nebula';
+const viewMode = 'nebula';
 let playbackSpeed = 1;
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 let orbitMotion = !reducedMotion.matches;
 let orbitPhase = 0;
+let animationTime = 0;
 
 function rememberArtwork(name = current?.name) {
-  if (!name) return;
+  if (!name || cover.visible) return;
   const url = new URL(location.href);
   if (name === DEMO_NAME) { url.searchParams.set('demo', '1'); url.searchParams.delete('pack'); }
   else { url.searchParams.set('pack', name); url.searchParams.delete('demo'); }
-  if (viewMode !== 'nebula') url.searchParams.set('style', viewMode);
-  else url.searchParams.delete('style');
+  url.searchParams.delete('style');
   history.replaceState(null, '', url);
 }
 
@@ -78,7 +77,7 @@ const hud = createHud({
       uniforms: current.disc.uniforms, playheadMat: current.disc.playheadMat,
       sessionId: current.pack.manifest.sessionId,
       render: (target, camera) => view.render(target, camera),
-      mode: viewMode,
+      mode: viewMode, activity: current.disc.activityAt(current.pack.manifest.durationMs),
     }).finally(() => { lastRenderStamp = null; }); // release print-sized intermediate GPU targets
   },
   onFit: () => view.fit(),
@@ -89,39 +88,28 @@ const hud = createHud({
   onRecord: () => (live ? stopRecording() : startRecording()),
   onLibrary: () => toggleLibrary(),
   onDemo: () => switchPack(DEMO_NAME),
-  onViewMode: changeViewMode,
+  onHome: () => showEntrance(),
 });
 hud.setOrbitMotion(orbitMotion);
 reducedMotion.addEventListener('change', (event) => {
   if (event.matches) { orbitMotion = false; hud.setOrbitMotion(false); }
 });
 
-function buildArtwork(pack, layout, replay, mode) {
-  return mode === 'nebula'
-    ? buildNebula(pack, layout, { replay })
-    : buildAtlas(pack, layout);
-}
+const cover = createCover({
+  onEnter: async () => {
+    if (!current && !live) await switchPack(PACKS[0] ?? DEMO_NAME);
+    cover.hide(); rememberArtwork();
+  },
+  onRecord: async () => { cover.hide(); await startRecording(); },
+  onArchive: () => { cover.hide(); hud.setLibraryOpen(true); refreshLibrary(); },
+});
 
-function changeViewMode(mode) {
-  if (live || !['nebula', 'atlas', 'ink'].includes(mode)) return;
-  if (current && (mode === 'nebula') !== (viewMode === 'nebula')) {
-    let next;
-    try { next = buildArtwork(current.pack, current.layout, current.replay, mode); }
-    catch (error) { hud.setStats(`Eser oluşturulamadı — ${error.message}`); return; }
-    view.scene.remove(current.disc.group);
-    current.disc.dispose();
-    current.disc = next;
-    view.scene.add(next.group);
-  }
-  viewMode = mode;
-  current?.disc.setViewMode?.(mode);
-  if (current?.disc.uniforms.uTilt) current.disc.uniforms.uTilt.value = view.tilt;
-  view.setTheme(mode);
-  hud.setViewMode(mode);
-  select(null);
-  rememberArtwork();
-  lastRenderStamp = null;
+function clearArtworkAddress() {
+  const url = new URL(location.href);
+  for (const key of ['pack', 'demo', 'style']) url.searchParams.delete(key);
+  history.replaceState(null, '', url);
 }
+function showEntrance() { clearArtworkAddress(); cover.show(); }
 const syncPacks = (selected) => hud.setPacks(PACKS.map((name) => packEntries.find((p) => p.name === name) ?? name), selected);
 
 canvas.addEventListener('webglcontextlost', (event) => {
@@ -288,8 +276,7 @@ function applyLiveSel() {
 
 view.onCanvasClick((x, y) => {
   if (live?.disc) {
-    const point = unprojectTracePoint(x, y, 0);
-    selectLive(live.layout.pickLane(point.x, point.y)); return;
+    selectLive(live.disc.inspect(x, y)?.lane ?? null); return;
   }
   if (!current) return;
   const hit = current.disc.inspect(x, y);
@@ -309,7 +296,8 @@ view.onHover((x, y) => {
   if (!live && current) current.disc.updateHover?.(x, y);
 });
 view.onTilt((tilt) => {
-  if (current?.disc.uniforms.uTilt) current.disc.uniforms.uTilt.value = tilt;
+  const disc = live?.disc ?? current?.disc;
+  if (disc?.uniforms.uTilt) disc.uniforms.uTilt.value = tilt;
   hud.setTilt?.(tilt);
 });
 
@@ -364,7 +352,7 @@ async function switchPack(name, notice = null) {
   try {
     layout = buildLayout(pack.manifest);
     replay = createGestureReplay(pack);
-    disc = buildArtwork(pack, layout, replay, viewMode);
+    disc = buildNebula(pack, layout, { replay });
   } catch (err) {
     hud.setLoading(false);
     hud.setStats(`Eser oluşturulamadı — ${err.message}`);
@@ -420,7 +408,9 @@ async function startRecording() {
     laneEvents: null,    // per-lane live event counts (seat panel)
     sel: null,           // isolated seat: { z, s, pid } — survives rebuilds
     selShown: null,      // last seat-panel snapshot (avoid innerHTML churn)
-    durationMs: st.durationMs ?? 90000, visualSeed: null,
+    durationMs: st.durationMs ?? DEFAULT_DURATION_MS, visualSeed: null,
+    clockOrigin: performance.now() - (st.state === 'RECORDING' ? Math.max(0, Date.now() - st.startedAtLocalMs) : 0),
+    clockAligned: false,
     started: false,      // server confirmed RECORDING for this take
     starting: false,     // arm/start handshake in flight
     stopping: false,     // '■ DURDURULUYOR…' owns the rec label
@@ -573,7 +563,7 @@ function ensureLiveDisc(roster, { derived = false } = {}) {
   if (live.disc) return;
   // a derived roster covers only whoever acted in the first batches — give it
   // a far bigger spare band so latecomers are not silently invisible
-  const spareLanes = derived ? 256 : 64;
+  const spareLanes = Math.max(64, 2000 - roster.length);
   const { layout, laneOf, laneMeta, laneCount } = rosterLayout(roster, live.durationMs, buildLayout, spareLanes);
   live.layout = layout;
   live.laneOf = laneOf;
@@ -581,10 +571,10 @@ function ensureLiveDisc(roster, { derived = false } = {}) {
   live.laneEvents = new Uint32Array(laneCount);
   live.rosterDerived = derived;
   live.replayBuf = derived ? [] : null; // kept so a genuine roster can rebuild
-  live.disc = createLiveDisc(layout, { visualSeed: live.visualSeed ?? 1 });
-  live.disc.setViewMode?.('record');
-  view.setTheme('atlas');
-  hud.setViewMode('record');
+  live.disc = createLiveNebula(layout, { visualSeed: live.visualSeed ?? 1 });
+  live.disc.uniforms.uTilt.value = view.tilt;
+  view.setTheme('nebula');
+  hud.setViewMode('nebula');
   hud.setArtwork({ laneCount: roster.length, eventCount: 0, durationMs: live.durationMs, label: 'Canlı kayıt' });
   view.scene.add(live.disc.group);
   applyLiveSel(); // a (z,s) isolation must survive the disc (re)build
@@ -610,6 +600,10 @@ function processLiveEvents(events) {
     // no genuine roster in sight: stop buffering before memory becomes a risk
     if (live.replayBuf.length > 400000) { live.replayBuf = null; live.rosterDerived = false; }
   }
+  if (events.length && !live.clockAligned) {
+    live.clockOrigin = performance.now() - Math.max(...events.map(e => Number.isFinite(e.t) ? e.t : 0));
+    live.clockAligned = true;
+  }
   for (const e of events) {
     if (e.t > live.maxT) live.maxT = e.t;
     const lane = live.laneOf(e.z, e.s);
@@ -628,8 +622,9 @@ async function handleLive(msg) {
     if (msg.state === 'RECORDING') {
       // attaching to an already-running session: the hello roster is current
       live.started = true;
+      clearArtworkAddress();
       clearStage();
-      if (msg.roster?.length) ensureLiveDisc(msg.roster);
+      ensureLiveDisc(msg.roster ?? [], { derived: !msg.roster?.length });
       hud.setRecState('■ KAYIT', true);
     } else if (live.started) {
       // reconnect hello after the recorder restarted mid-take: the take is gone
@@ -667,12 +662,13 @@ async function handleLive(msg) {
       if (msg.visualSeed) live.visualSeed = msg.visualSeed;
       live.started = true;
       if (live.cancelling) { stopRecordingConfirmed(); return; }
-      // server confirmed the take: NOW the stage belongs to the live disc
+      // server confirmed the take: NOW the stage belongs to the live Nebula
+      clearArtworkAddress();
       clearStage();
       if (live.pendingRoster) {
         ensureLiveDisc(live.pendingRoster);
         live.pendingRoster = null;
-      }
+      } else ensureLiveDisc([], { derived: true });
       hud.setRecState('■ KAYIT', true);
     } else if (msg.state === 'FINALIZING') {
       live.stopping = true;
@@ -690,7 +686,9 @@ async function handleLive(msg) {
       PACKS = await fetchPacks();
       if (!PACKS.includes(packName)) PACKS.push(packName);
       syncPacks(packName);
+      const completedOrbit = orbitPhase;
       await switchPack(packName);
+      orbitPhase = completedOrbit;
       refreshLibrary(); // a finished take is new library content
     } else if (msg.state === 'IDLE' && msg.error) {
       exitLive('kayıt hatası — sunucu loguna bak');
@@ -720,15 +718,6 @@ function stopLiveUi(err) {
 }
 
 // ------------------------------------------------------------------- render
-const projectToScreen = (x, y) => {
-  const cam = view.camera;
-  const w = canvas.clientWidth || window.innerWidth;
-  const h = canvas.clientHeight || window.innerHeight;
-  const ndcX = ((x - cam.position.x) * cam.zoom) / (cam.right - cam.left) * 2;
-  const ndcY = ((y - cam.position.y) * cam.zoom) / (cam.top - cam.bottom) * 2;
-  return { x: (ndcX * 0.5 + 0.5) * w, y: (1 - (ndcY * 0.5 + 0.5)) * h, visible: Math.abs(ndcX) < 1.05 && Math.abs(ndcY) < 1.05 };
-};
-
 let prev = performance.now();
 let lastMetrics = 0;
 let lastRenderStamp = null;
@@ -745,15 +734,19 @@ function frame(now) {
   prev = now;
   const px = view.pixelsPerWorldUnit();
   const devicePx = px * view.renderer.getPixelRatio();
-  hud.labelLayer.hidden = !live?.disc;
+  hud.labelLayer.hidden = true;
+  if (!document.hidden && !reducedMotion.matches && !cover.visible) animationTime += dt / 1000;
 
   if (live?.disc) {
     const d = live.disc;
-    d.uniforms.uTime.value = live.maxT;
+    const time = Math.min(live.durationMs, Math.max(live.maxT, now - live.clockOrigin));
+    d.uniforms.uAnimation.value = animationTime;
+    if (orbitMotion && !document.hidden && !cover.visible) orbitPhase = (orbitPhase + dt * 0.000024) % (Math.PI * 2);
+    d.uniforms.uOrbit.value = orbitPhase;
     d.uniforms.uPointScale.value = devicePx;
     d.playheadMat.opacity = 0.55;
-    d.updatePlayhead?.(live.maxT);
-    hud.setTime(live.maxT, true);
+    d.updatePlayhead?.(time);
+    hud.setTime(time, true);
     if (now - lastMetrics > 250) {
       lastMetrics = now;
       hud.setLiveMetrics?.({
@@ -775,19 +768,20 @@ function frame(now) {
             `${count.toLocaleString('tr-TR')} olay · canlı`,
         });
       }
+      const gesture = d.sampleLane(lane, time);
+      hud.setGestureState({lane, pid:live.sel.pid, exact:true, hasXY:Boolean(gesture), ...gesture});
     }
     if (!live.stopping) {
       // '■ DURDURULUYOR…' / '■ PAKETLENIYOR…' own the label while stopping
       hud.setRecState(
         live.staleSince !== null
           ? '⚠ BAĞLANTI KOPTU — yeniden bağlanıyor'
-          : `■ ${(live.maxT / 1000).toFixed(1)}s · ${d.grainCount().toLocaleString('tr-TR')} tane` +
+          : `■ ${Math.floor(time / 60000).toString().padStart(2, '0')}:${Math.floor(time / 1000 % 60).toString().padStart(2, '0')} / 03:00` +
             (live.dropped ? ` · ⚠ ${live.dropped.toLocaleString('tr-TR')} olay şerit dışı` : ''),
         true,
       );
     }
-    updateZoneLabels(hud.labelLayer, live.layout, projectToScreen, px);
-    renderIfChanged(`live:${d.group.uuid}:${live.maxT}:${d.grainCount()}:${d.uniforms.uSelLane.value}`);
+    if (!cover.visible) renderIfChanged(`live:${d.group.uuid}:${time}:${animationTime}:${orbitPhase}:${d.grainCount()}:${d.uniforms.uSelLane.value}`);
     return;
   }
 
@@ -798,7 +792,7 @@ function frame(now) {
   if (transport.time < disc.uniforms.uTime.value) {
     // A previously selected late cell must not disclose future counts after
     // seeking or restarting. Includes keyboard playback from the final state.
-    if (current.gestureSelection && viewMode === 'nebula') {
+    if (current.gestureSelection) {
       current.gestureSelection.previewTime = null;
       const p = current.pack.manifest.participants[current.gestureSelection.lane];
       hud.showSeat({ title: p.p, meta: 'Kaydedilmiş parmak hareketi · X / Y' });
@@ -817,10 +811,11 @@ function frame(now) {
   disc.uniforms.uTime.value = transport.time;
   disc.uniforms.uPointScale.value = devicePx;
   if (disc.uniforms.uOrbit) {
-    if (orbitMotion && !document.hidden) orbitPhase = (orbitPhase + dt * 0.000024) % (Math.PI * 2);
+    if (orbitMotion && !document.hidden && !cover.visible) orbitPhase = (orbitPhase + dt * 0.000024) % (Math.PI * 2);
     disc.uniforms.uOrbit.value = orbitPhase;
   }
 
+  disc.uniforms.uAnimation.value = animationTime;
   const replaying = transport.time < layout.durationMs;
   disc.uniforms.uReplaying.value = replaying ? 1 : 0;
   disc.playheadMat.opacity = replaying ? 0.55 : 0;
@@ -828,7 +823,7 @@ function frame(now) {
 
   hud.setTime(transport.time, transport.playing);
   syncGesture();
-  renderIfChanged(`${disc.group.uuid}:${transport.time}:${disc.uniforms.uOrbit?.value ?? 0}:${disc.uniforms.uSelLane.value}:${disc.uniforms.uSelRow?.value}:${disc.uniforms.uSelColumn?.value}:${disc.hoverStamp ?? ''}`);
+  if (!cover.visible) renderIfChanged(`${animationTime}:${disc.group.uuid}:${transport.time}:${disc.uniforms.uOrbit?.value ?? 0}:${disc.uniforms.uSelLane.value}:${disc.uniforms.uSelRow?.value}:${disc.uniforms.uSelColumn?.value}:${disc.hoverStamp ?? ''}`);
 }
 
 // Boot: if the recorder is already mid-take, auto-attach through the exact
@@ -848,6 +843,7 @@ async function boot() {
       if ((await r.json()).state === 'RECORDING') { startRecording(); return; }
     } else hud.setConnection('offline');
   } catch { hud.setConnection('offline'); }
+  showEntrance();
   if (PACKS.length) await switchPack(PACKS[0]);
   else await switchPack(DEMO_NAME); // fresh install has a clearly labeled, local study
 }

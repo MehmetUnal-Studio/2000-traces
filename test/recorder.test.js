@@ -33,6 +33,7 @@ test('records a file source to JSONL and finalizes', async () => {
   const imported = importSession(readFileSync(out, 'utf8').split('\n'));
   assert.equal(imported.meta.sessionId, 'rec-test');
   assert.equal(imported.meta.visualSeed, 42);
+  assert.equal(imported.meta.durationMs, 180000);
   assert.equal(imported.complete, true);
   assert.equal(imported.events.length, summary.stats.stored);
   // raw preserved on disk: the first stored event carries the first accepted
@@ -44,6 +45,35 @@ test('records a file source to JSONL and finalizes', async () => {
   assert.ok(firstAcceptedRaw); // fixture sanity: it contains an acceptable event
   assert.deepEqual(imported.events[0].raw, firstAcceptedRaw);
   assert.equal(imported.end.stats.stored, summary.stats.stored);
+});
+
+test('three-minute wall-clock stop closes the source and writes one complete final summary', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'traces-stop-'));
+  const out = join(dir, 'session.jsonl');
+  let clock = 1000; let sourceClosed = false;
+  async function* timedSource() {
+    try {
+      for (const elapsed of [0, 90001, 179999, 180000, 180001]) {
+        clock = 1000 + elapsed;
+        yield { raw: { t: 1, z: 0, s: 1, ts: 2000 + elapsed }, arrivalMs: clock };
+      }
+    } finally { sourceClosed = true; }
+  }
+  const summary = await recordFromSource(timedSource(), {
+    outPath: out, sessionId: 'three-minute-stop', visualSeed: 1, stopAfterMs: 180000, now: () => clock,
+  });
+  assert.equal(sourceClosed, true);
+  assert.equal(summary.durationMs, 180000);
+  assert.equal(summary.session.state(), 'COMPLETE');
+  assert.equal(summary.endedAtLocalMs - summary.startedAtLocalMs, 180000);
+  assert.equal(summary.events, 3, 'wall-clock stop runs before accepting the next event at the deadline');
+  const lines = readFileSync(out, 'utf8').trim().split('\n');
+  const imported = importSession(lines);
+  assert.equal(imported.complete, true);
+  assert.equal(imported.meta.durationMs, 180000);
+  assert.deepEqual(imported.events.map((event) => event.tMs), [0, 90001, 179999]);
+  assert.equal(lines.filter((line) => JSON.parse(line).kind === 'end').length, 1);
+  assert.equal(imported.end.events, summary.events);
 });
 
 test('same file + same seed produce identical event lines (determinism)', async () => {

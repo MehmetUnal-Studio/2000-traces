@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildNebula, nebulaEventPosition, projectNebulaPoint, unprojectNebulaPoint, NEBULA_LIMITS, NEBULA_CORE_RADIUS } from '../viz/src/nebula.js';
+import { buildNebula, createNebulaUniforms, createNebulaCore, makePoints, makeFilamentSegments, nebulaEventPosition, projectNebulaPoint, unprojectNebulaPoint, NEBULA_LIMITS, NEBULA_CORE_RADIUS } from '../viz/src/nebula.js';
 import { readGesture, TYPE } from '../viz/src/gesture-replay.js';
+import { createPackFlowEnergy } from '../viz/src/flow-energy.js';
 import { createDemoPack } from '../viz/src/demo-pack.js';
 
 function fixture({exact=true}={}) {
@@ -141,4 +142,45 @@ test('two million real event slots are sampled across the whole source within th
     const atmosphere=nebula.group.getObjectByName('nebula-event-atmosphere');
     assert.equal(atmosphere.isMesh,true,'haze uses world-space billboards for export fidelity');
   } finally {nebula.dispose();}
+});
+
+test('archive corona follows causal recorded activity through seek and exposes a clamped live override',()=>{
+  const pack=fixture(),nebula=buildNebula(pack),flow=createPackFlowEnergy(pack);
+  try {
+    const geometry=nebula.group.getObjectByName('nebula-actual-event-starlight').geometry;
+    const before=geometry.attributes.position.array.slice();
+    for(const time of [0,100.249,100.25,350,760,999,200,0,760]) {
+      nebula.updatePlayhead(time);
+      assert.equal(nebula.uniforms.uActivity.value,flow.sample(time).energy);
+      assert.equal(nebula.uniforms.uTime.value,time);
+    }
+    assert.equal(nebula.setActivity(2),1);assert.equal(nebula.setActivity(-1),0);
+    assert.equal(nebula.setActivity(NaN),0);
+    nebula.updatePlayhead(350);
+    assert.equal(nebula.uniforms.uActivity.value,flow.sample(350).energy);
+    assert.deepEqual(geometry.attributes.position.array,before,'activity only illuminates original positions');
+  } finally {nebula.dispose();}
+});
+
+test('live material helpers share activity and animation state even before the first source event',()=>{
+  const uniforms=createNebulaUniforms(180000);
+  const points=makePoints(new Float32Array(3),new Float32Array(4),new Float32Array(2),uniforms,'test-live-points');
+  const haze=makePoints(new Float32Array(3),new Float32Array(4),new Float32Array(2),uniforms,'test-live-haze',true);
+  const lines=makeFilamentSegments(new Float32Array(3),new Float32Array(3),new Float32Array(4),uniforms);
+  const core=createNebulaCore(uniforms);
+  try {
+    assert.equal(uniforms.uHasData.value,0);
+    assert.equal(uniforms.uTime.value,0);
+    assert.ok(core.geometry.attributes.position.count>0);
+    for(const object of [points,haze,lines,core]) {
+      assert.equal(object.material.uniforms.uActivity,uniforms.uActivity);
+      assert.equal(object.material.uniforms.uAnimation,uniforms.uAnimation);
+    }
+    uniforms.uActivity.value=0.42;uniforms.uAnimation.value=2.5;
+    assert.equal(core.material.uniforms.uActivity.value,0.42);
+    assert.equal(core.material.uniforms.uAnimation.value,2.5);
+    assert.equal(core.material.premultipliedAlpha,true,'thin corona adds emission without masking the dust behind it');
+  } finally {
+    for(const object of [points,haze,lines,core]) {object.geometry.dispose();object.material.dispose();}
+  }
 });

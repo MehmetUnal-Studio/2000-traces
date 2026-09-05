@@ -15,7 +15,7 @@ test('full 384-participant capture: counts, identity, monotonicity, round-trip',
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const out = join(dir, 'full.jsonl');
   const summary = await recordFromSource(fileSource(CAPTURE), {
-    outPath: out, sessionId: 'acceptance', visualSeed: 1, source: 'file:capture',
+    outPath: out, sessionId: 'acceptance', visualSeed: 1, source: 'file:capture', durationMs: 90000,
   });
 
   // MVP criterion 3+4: stable identities, every participant owns a trace

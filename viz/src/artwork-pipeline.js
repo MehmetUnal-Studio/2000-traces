@@ -37,7 +37,7 @@ export function createArtworkPipeline(renderer) {
       gl_FragColor = vec4(c, 1.0);
     }`, { uImage: { value: glowA.texture }, uStep: { value: new THREE.Vector2() } });
   const finish = material(`precision highp float;
-    varying vec2 vUv; uniform sampler2D uImage; uniform sampler2D uGlow; uniform float uInk;
+    varying vec2 vUv; uniform sampler2D uImage; uniform sampler2D uGlow;
     vec3 toDisplay(vec3 c) {
       return mix(c * 12.92, 1.055 * pow(max(c, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055,
         step(vec3(0.0031308), c));
@@ -45,12 +45,12 @@ export function createArtworkPipeline(renderer) {
     void main() {
       vec3 linear = texture2D(uImage, vUv).rgb;
       vec3 light = linear + texture2D(uGlow, vUv).rgb * 0.21;
-      vec3 c = mix(vec3(1.0) - exp(-light * 1.18), clamp(linear, 0.0, 1.0), uInk);
+      vec3 c = vec3(1.0) - exp(-light * 1.18);
       c = toDisplay(c);
       float grain = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
-      c += (grain - 0.5) * mix(0.003, 0.009, uInk);
+      c += (grain - 0.5) * 0.003;
       gl_FragColor = vec4(c, 1.0);
-    }`, { uImage: { value: field.texture }, uGlow: { value: glowA.texture }, uInk: { value: 0 } });
+    }`, { uImage: { value: field.texture }, uGlow: { value: glowA.texture } });
   function pass(mat, target) {
     quad.material = mat;
     renderer.setRenderTarget(target);
@@ -71,7 +71,7 @@ export function createArtworkPipeline(renderer) {
     try {
       renderer.setRenderTarget(field);
       renderer.render(artwork, viewCamera);
-      if (finish.uniforms.uInk.value < 0.5) {
+      {
         pass(extract, glowA);
         for (const spread of [1.0, 2.4]) {
           blur.uniforms.uImage.value = glowA.texture;
@@ -87,7 +87,7 @@ export function createArtworkPipeline(renderer) {
   }
   return {
     render,
-    setTheme: (mode) => { finish.uniforms.uInk.value = mode === 'ink' ? 1 : 0; },
+    setTheme: () => {},
     dispose() { [field, glowA, glowB, extract, blur, finish, quad.geometry].forEach((v) => v.dispose()); },
   };
 }

@@ -2,6 +2,9 @@
 import { normalizeEvent } from './adapter.js';
 import { createStore } from './store.js';
 
+import { DEFAULT_DURATION_MS } from './constants.js';
+export { DEFAULT_DURATION_MS } from './constants.js';
+
 // States: IDLE -> ARMED -> RECORDING -> FINALIZING -> COMPLETE
 
 // Operator-typed free text riding into JSONL, manifests, and the library UI —
@@ -13,7 +16,7 @@ export function sanitizeLabel(label) {
   return [...label.replace(/[^\p{L}\p{N} _-]/gu, '')].slice(0, LABEL_MAX).join('');
 }
 
-export function createSession({ sessionId, visualSeed, durationMs = 90000, now = Date.now, label = '' } = {}) {
+export function createSession({ sessionId, visualSeed, durationMs = DEFAULT_DURATION_MS, now = Date.now, label = '' } = {}) {
   if (!sessionId) sessionId = `session-${now()}`;
   if (visualSeed === undefined) visualSeed = Math.floor(Math.random() * 2 ** 31);
   const cleanLabel = sanitizeLabel(label);

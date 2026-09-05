@@ -4,7 +4,7 @@
 // that URL and revokes it when the preview closes or is replaced.
 import * as THREE from 'three';
 
-export async function exportStill({ renderer, scene, uniforms, playheadMat = null, sessionId, size = 4096, render, mode = 'atlas' }) {
+export async function exportStill({ renderer, scene, uniforms, playheadMat = null, sessionId, size = 4096, render, mode = 'nebula', activity = 0 }) {
   const extent = 1.12;
   const camera = new THREE.OrthographicCamera(-extent, extent, extent, -extent, -10, 10);
   camera.position.z = 1;
@@ -22,6 +22,10 @@ export async function exportStill({ renderer, scene, uniforms, playheadMat = nul
   for (const [key] of inspection) uniforms[key].value = -1;
   const prevTilt = uniforms.uTilt?.value;
   const prevOrbit = uniforms.uOrbit?.value;
+  const prevAnimation = uniforms.uAnimation?.value;
+  const prevActivity = uniforms.uActivity?.value;
+  if (uniforms.uAnimation) uniforms.uAnimation.value = 0;
+  if (uniforms.uActivity) uniforms.uActivity.value = Math.max(0, Math.min(1, activity));
   if (uniforms.uTilt) uniforms.uTilt.value = 0;
   if (uniforms.uOrbit) uniforms.uOrbit.value = 0;
   uniforms.uTime.value = uniforms.uDuration.value;
@@ -51,6 +55,8 @@ export async function exportStill({ renderer, scene, uniforms, playheadMat = nul
     for (const [key, value] of inspection) uniforms[key].value = value;
     if (uniforms.uTilt) uniforms.uTilt.value = prevTilt;
     if (uniforms.uOrbit) uniforms.uOrbit.value = prevOrbit;
+    if (uniforms.uAnimation) uniforms.uAnimation.value = prevAnimation;
+    if (uniforms.uActivity) uniforms.uActivity.value = prevActivity;
     if (playheadMat) playheadMat.opacity = prevPlayhead;
   }
 

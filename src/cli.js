@@ -3,9 +3,10 @@ import { fileSource } from './sources/file-source.js';
 import { liveSource } from './sources/live-source.js';
 import { recordFromSource } from './recorder.js';
 import { loadEnv } from './env.js';
+import { DEFAULT_DURATION_MS } from './session.js';
 
 const [, , cmd, arg] = process.argv;
-const durationSec = Number(process.env.DURATION_SEC ?? 90);
+const durationSec = Number(process.env.DURATION_SEC ?? DEFAULT_DURATION_MS / 1000);
 const sessionId = `session-${new Date().toISOString().replace(/[:.]/g, '-')}`;
 const outPath = new URL(`../sessions/${sessionId}.jsonl`, import.meta.url).pathname;
 
