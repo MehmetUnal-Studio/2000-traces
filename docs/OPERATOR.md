@@ -76,6 +76,8 @@ Boşluk tuşu kaydı durdurmaz; oynatma kontrolleri arşiv içindir. Kayıt kont
 
 ## 5. Arşiv ve kurtarma
 
+Kaydedilmiş oturumu aynı yerel OSC zincirine göndermek için görselleştiricide **UDP çıkışı** açıkça etkinleştirilir. Kayıt masası bu global çıkışı izler ve **UDP'yi durdur** ile replay notalarını kapatır. Arşivi veya paneli açmak UDP göndermez. Hedef, Venue Engine Hold kontrolü ve zaman çizelgesi davranışı için [UDP tekrar oynatımı](UDP-REPLAY.md) belgesine bakın.
+
 Kayıt masasındaki **Oturumlar** listesi ham JSONL dosyalarını tarih, etiket, katılımcı, olay sayısı ve tamamlanma durumuyla gösterir. Aktif oturum indirme bağlantısı kayıt kapanana kadar sunulmaz. **Eksik oturum**, dosyanın tamamlanmış bir `end` satırı taşımadığını belirtir; bunu tamamlanmış gösteri kaydı olarak değerlendirmeyin.
 
 Görselleştiricinin **Kütüphane** panelinde:

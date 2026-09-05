@@ -1,6 +1,7 @@
-// A quiet, centered gallery stage. Every visible mark belongs to the dataset.
+// A physical camera moving through the artwork's three-dimensional space.
 import * as THREE from 'three';
 import { createArtworkPipeline } from './artwork-pipeline.js';
+import { createCameraRig, fittedCameraPose, CAMERA_LIMITS } from './camera-rig.js';
 
 export function createScene(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: 'high-performance' });
@@ -8,61 +9,77 @@ export function createScene(canvas) {
   renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
   const scene = new THREE.Scene();
   const pipeline = createArtworkPipeline(renderer);
-  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -10, 10);
-  camera.position.z = 2;
+  const camera = new THREE.PerspectiveCamera(CAMERA_LIMITS.fov, 1, .008, 80);
+  const rig = createCameraRig();
   let viewW = 0; let viewH = 0; let fitted = true; let disposed = false;
   let revision = 0; let tilt = 0; let presentation = false;
-  const clickListeners = new Set();
-  const hoverListeners = new Set();
-  const tiltListeners = new Set();
+  const clickListeners = new Set(); const hoverListeners = new Set(); const tiltListeners = new Set(); const journeyListeners = new Set();
+  let journeyShown = false;
+  const syncJourney = () => {
+    if (journeyShown === rig.journeyActive) return;
+    journeyShown = rig.journeyActive;
+    journeyListeners.forEach((fn) => fn(journeyShown));
+  };
+  const stopJourney = () => { rig.stopJourney(); syncJourney(); };
+  const startJourney = () => {
+    fitted = false;
+    rig.startJourney({ reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches });
+    syncJourney(); revision++;
+  };
+  const syncCamera = () => {
+    const state = rig.state; const position = rig.position;
+    camera.position.set(position.x, position.y, position.z);
+    camera.lookAt(state.target.x, state.target.y, state.target.z);
+    camera.updateMatrixWorld();
+  };
   const setTheme = (mode) => {
     pipeline.setTheme(mode);
-    renderer.setClearColor(new THREE.Color().setRGB(0.0015, 0.0022, 0.0030));
+    renderer.setClearColor(new THREE.Color().setRGB(.0015, .0022, .003));
     revision++;
   };
   setTheme('nebula');
-  const fitCamera = () => {
-    const aspect = viewW / viewH;
-    const frame = presentation ? 70 : viewW < 700 ? 260 : 190;
-    camera.zoom = Math.max(0.15, Math.min((viewH - frame) / viewH / 1.05, aspect * (presentation ? 0.90 : 0.87)));
-    camera.position.set(0, presentation ? 0 : viewW < 700 ? -0.20 / camera.zoom : -0.018, 2);
-    camera.updateProjectionMatrix();
+  const fitCamera = (immediate = false) => {
+    rig.set(fittedCameraPose({ width: viewW, height: viewH, presentation }), { immediate });
+    syncJourney();
+    if (immediate) syncCamera();
+    revision++;
   };
   const resize = () => {
     if (disposed) return;
-    const w = canvas.clientWidth || window.innerWidth;
-    const h = canvas.clientHeight || window.innerHeight;
+    const w = canvas.clientWidth || window.innerWidth; const h = canvas.clientHeight || window.innerHeight;
     if (!w || !h || (w === viewW && h === viewH)) return;
     viewW = w; viewH = h;
     renderer.setSize(w, h, false);
-    const aspect = w / h;
-    camera.left = -aspect; camera.right = aspect; camera.top = 1; camera.bottom = -1;
-    if (fitted) fitCamera(); else camera.updateProjectionMatrix();
+    camera.aspect = w / h; camera.updateProjectionMatrix();
+    if (fitted) fitCamera(true); else syncCamera();
     revision++;
   };
   resize();
   const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(resize) : null;
-  observer?.observe(canvas);
-  window.addEventListener('resize', resize);
-  const worldFromScreen = (clientX, clientY) => {
-    resize(); camera.updateMatrixWorld();
+  observer?.observe(canvas); window.addEventListener('resize', resize);
+  const ndcFromScreen = (clientX, clientY) => {
     const rect = canvas.getBoundingClientRect();
-    return new THREE.Vector3(
-      ((clientX - rect.left) / (rect.width || viewW || 1)) * 2 - 1,
-      -((clientY - rect.top) / (rect.height || viewH || 1)) * 2 + 1, 0,
-    ).unproject(camera);
+    return { x: ((clientX - rect.left) / (rect.width || viewW || 1)) * 2 - 1,
+      y: -((clientY - rect.top) / (rect.height || viewH || 1)) * 2 + 1 };
   };
-  const zoomAt = (factor, x, y) => {
-    const before = worldFromScreen(x, y);
-    fitted = false;
-    camera.zoom = Math.min(48, Math.max(0.15, camera.zoom * factor));
-    camera.updateProjectionMatrix();
-    const after = worldFromScreen(x, y);
-    camera.position.x += before.x - after.x;
-    camera.position.y += before.y - after.y;
-    revision++;
+  const raycaster = new THREE.Raycaster(); const targetPlane = new THREE.Plane();
+  const direction = new THREE.Vector3(); const targetPoint = new THREE.Vector3();
+  // Compatibility helper: intersection with the camera-facing target plane.
+  // Picking callbacks use NDC directly and never flatten a perspective ray.
+  const worldFromScreen = (clientX, clientY) => {
+    const ndc = ndcFromScreen(clientX, clientY); const target = rig.state.target;
+    targetPoint.set(target.x, target.y, target.z);
+    camera.getWorldDirection(direction);
+    targetPlane.setFromNormalAndCoplanarPoint(direction, targetPoint);
+    raycaster.setFromCamera(ndc, camera);
+    return raycaster.ray.intersectPlane(targetPlane, new THREE.Vector3()) ?? targetPoint.clone();
   };
+  const setDistance = (distance, options) => { fitted = false; rig.setDistance(distance, options); syncJourney(); if (options?.immediate) syncCamera(); revision++; };
+  const approach = (factor) => { fitted = false; rig.approach(factor); syncJourney(); revision++; };
+  const orbitBy = (yaw, pitch) => { fitted = false; rig.orbit(yaw, pitch); syncJourney(); revision++; };
+  const setCameraPose = (pose, options) => { fitted = false; rig.set(pose, options); syncJourney(); if (options?.immediate) syncCamera(); revision++; };
   const setTilt = (value) => {
+    if (!Number.isFinite(value)) return;
     const limit = 35 * Math.PI / 180;
     tilt = Math.max(-limit, Math.min(limit, value));
     tiltListeners.forEach((fn) => fn(tilt)); revision++;
@@ -73,67 +90,83 @@ export function createScene(canvas) {
     const [a, b] = [...pointers.values()];
     return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) };
   };
-  const resetDrag = () => { pointers.clear(); last = null; pinching = false; canvas.classList.remove('is-dragging'); };
-  const pointerdown = (e) => {
-    if (e.button !== 0) return;
-    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    canvas.setPointerCapture(e.pointerId);
-    if (pointers.size === 1) { moved = 0; last = { x: e.clientX, y: e.clientY }; }
+  const resetDrag = () => {
+    for (const id of pointers.keys()) if (canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
+    pointers.clear(); last = null; pinching = false; canvas.classList.remove('is-dragging');
+  };
+  const pointerdown = (event) => {
+    if (event.button !== 0 || pointers.size >= 2) return;
+    stopJourney();
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    canvas.setPointerCapture(event.pointerId);
+    if (pointers.size === 1) { moved = 0; last = { x: event.clientX, y: event.clientY }; }
     else { pinching = true; moved = 10; last = pair(); }
   };
-  const pointermove = (e) => {
-    if (!pointers.has(e.pointerId)) {
-      const w = worldFromScreen(e.clientX, e.clientY);
-      hoverListeners.forEach((fn) => fn(w.x, w.y)); return;
+  const pointermove = (event) => {
+    if (!pointers.has(event.pointerId)) {
+      if (pointers.size) return;
+      const ndc = ndcFromScreen(event.clientX, event.clientY);
+      hoverListeners.forEach((fn) => fn(ndc.x, ndc.y)); return;
     }
-    if (e.pointerType === 'mouse' && e.buttons === 0) { resetDrag(); return; }
-    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (event.pointerType === 'mouse' && event.buttons === 0) { resetDrag(); return; }
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (pointers.size > 1) {
       const p = pair();
-      zoomAt(last.d > 1 ? p.d / last.d : 1, p.x, p.y);
-      camera.position.x -= (p.x - last.x) / viewH * 2 / camera.zoom;
-      camera.position.y += (p.y - last.y) / viewH * 2 / camera.zoom;
-      last = p; return;
+      if (last.d > 1 && p.d > 1) approach(p.d / last.d);
+      rig.pan(p.x - last.x, p.y - last.y, viewH);
+      fitted = false; last = p; revision++; return;
     }
-    const dx = e.clientX - last.x; const dy = e.clientY - last.y;
-    moved += Math.abs(dx) + Math.abs(dy); last = { x: e.clientX, y: e.clientY };
+    const dx = event.clientX - last.x; const dy = event.clientY - last.y;
+    moved += Math.abs(dx) + Math.abs(dy); last = { x: event.clientX, y: event.clientY };
     if (moved > 4) canvas.classList.add('is-dragging');
-    if (e.shiftKey) setTilt(tilt + dy * 0.005);
-    else {
-      fitted = false;
-      camera.position.x -= dx / viewH * 2 / camera.zoom;
-      camera.position.y += dy / viewH * 2 / camera.zoom; revision++;
-    }
+    fitted = false;
+    if (event.shiftKey) rig.pan(dx, dy, viewH);
+    else rig.orbit(-dx * .004, dy * .004);
+    revision++;
   };
-  const pointerup = (e) => {
-    if (!pointers.has(e.pointerId)) return;
-    pointers.delete(e.pointerId);
-    if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
-    if (pointers.size) { last = pointers.size > 1 ? pair() : [...pointers.values()][0]; return; }
+  const pointerup = (event) => {
+    if (!pointers.has(event.pointerId)) return;
+    pointers.delete(event.pointerId);
+    if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    if (pointers.size) { last = [...pointers.values()][0]; return; }
     const click = moved < 5 && !pinching;
     resetDrag();
-    if (click) { const w = worldFromScreen(e.clientX, e.clientY); clickListeners.forEach((fn) => fn(w.x, w.y)); }
+    if (click) { const ndc = ndcFromScreen(event.clientX, event.clientY); clickListeners.forEach((fn) => fn(ndc.x, ndc.y)); }
   };
   const pointerleave = () => { if (!pointers.size) hoverListeners.forEach((fn) => fn(null, null)); };
-  const wheel = (e) => { e.preventDefault(); zoomAt(Math.exp(-e.deltaY * 0.0016), e.clientX, e.clientY); };
+  const wheel = (event) => {
+    event.preventDefault();
+    const pixels = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? viewH : 1);
+    approach(Math.exp(-Math.max(-500, Math.min(500, pixels)) * .0015));
+  };
   const handlers = { pointerdown, pointermove, pointerup, pointercancel: resetDrag, pointerleave, wheel };
   for (const [name, handler] of Object.entries(handlers)) canvas.addEventListener(name, handler, name === 'wheel' ? { passive: false } : undefined);
   window.addEventListener('blur', resetDrag);
-  const fit = () => { fitted = true; resize(); fitCamera(); setTilt(0); revision++; };
+  const fit = ({ immediate = false } = {}) => { fitted = true; resize(); fitCamera(immediate); setTilt(0); };
+  const origin = new THREE.Vector3();
   return {
-    renderer, scene, camera, resize, fit, worldFromScreen, setTheme, setTilt,
+    renderer, scene, camera, resize, fit, worldFromScreen, ndcFromScreen, setTheme, setTilt, setDistance, approach, orbitBy, setCameraPose, startJourney, stopJourney,
+    tick(dt) { if (!disposed && rig.tick(dt)) { syncCamera(); revision++; } syncJourney(); return revision; },
     setPresentation(on) { presentation = !!on; if (fitted) fitCamera(); revision++; },
     render: (target = null, exportCamera = camera) => pipeline.render(scene, exportCamera, target),
     get revision() { return revision; }, get tilt() { return tilt; },
+    get distance() { return rig.state.distance; }, get desiredDistance() { return rig.desired.distance; },
+    get minDistance() { return CAMERA_LIMITS.minDistance; }, get maxDistance() { return CAMERA_LIMITS.maxDistance; },
+    get cameraRig() { return rig.state; }, get isFitted() { return fitted; },
+    get journeyActive() { return rig.journeyActive; },
+    onJourneyChange: (fn) => { journeyListeners.add(fn); return () => journeyListeners.delete(fn); },
     onCanvasClick: (fn) => { clickListeners.add(fn); return () => clickListeners.delete(fn); },
     onHover: (fn) => { hoverListeners.add(fn); return () => hoverListeners.delete(fn); },
     onTilt: (fn) => { tiltListeners.add(fn); return () => tiltListeners.delete(fn); },
-    pixelsPerWorldUnit: () => (viewH / 2) * camera.zoom,
+    pixelsPerWorldUnit() {
+      const depth = -origin.set(0, 0, 0).applyMatrix4(camera.matrixWorldInverse).z;
+      return viewH / (2 * Math.tan(camera.fov * Math.PI / 360) * Math.max(camera.near, depth));
+    },
     dispose() {
       if (disposed) return; disposed = true;
       observer?.disconnect(); window.removeEventListener('resize', resize); window.removeEventListener('blur', resetDrag);
       for (const [name, handler] of Object.entries(handlers)) canvas.removeEventListener(name, handler);
-      clickListeners.clear(); hoverListeners.clear(); tiltListeners.clear(); resetDrag(); pipeline.dispose(); renderer.dispose();
+      clickListeners.clear(); hoverListeners.clear(); tiltListeners.clear(); journeyListeners.clear(); resetDrag(); rig.stopJourney(); pipeline.dispose(); renderer.dispose();
     },
   };
 }

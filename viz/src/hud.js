@@ -44,7 +44,7 @@ function seatContent(markup) {
   return frag;
 }
 
-export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, onFinal, onRestart, onExport, onFit, onDeselect, onRecord, onLibrary, onDemo, onHome, onTilt, onFocusMode, onOrbitMotion } = {}) {
+export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, onFinal, onRestart, onExport, onFit, onDeselect, onRecord, onLibrary, onDemo, onHome, onTilt, onFocusMode, onOrbitMotion, onUdpEnable, onUdpDisable, onJourney } = {}) {
   const el = document.createElement('div');
   el.id = 'hud';
   el.dataset.view = 'nebula';
@@ -65,6 +65,7 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
     <h1 id="artworkTitle" class="sr-only">2000 TRACES — Kolektif sesin topografyası</h1>
     <div class="edge-caption" aria-hidden="true">SES / HAREKET / ZAMAN</div>
     <div class="connection" id="connection" data-state="offline"><span class="status-dot"></span><span id="connectionLabel">ARŞİV GÖRÜNÜMÜ</span></div>
+    <button id="udpOutputBadge" class="udp-output-badge" hidden>UDP çıkışını kapat</button>
     <div id="stats" role="status" aria-live="polite" aria-atomic="true"></div>
     <section class="work-note" aria-label="Görüntülenen eser">
       <div class="work-kicker" id="workKicker">Kolektif arşiv</div>
@@ -81,7 +82,9 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
       <dl id="nebulaLegend"><div><dt>X ekseni</dt><dd id="legendX">Yörüngenin açısal kıvrımı</dd></div><div><dt>Y ekseni</dt><dd id="legendY">Yörünge yarıçapı ve disk kalınlığı</dd></div><div><dt>İz bağlantısı</dt><dd>Aynı bilinen dokunuşun kayıtlı X/Y noktaları</dd></div><div><dt>Mavi / altın</dt><dd>Işık malzemesi; müzik hattı değildir</dd></div></dl>
       <div id="orbitMotionRow" class="orbit-motion-row"><span>Yörünge hareketi</span><button id="orbitMotion" type="button" role="switch" aria-checked="false" aria-label="Yörünge hareketi"><span id="orbitMotionLabel">Kapalı</span><span class="orbit-switch-dot" aria-hidden="true"></span></button><p>Kayıt değerlerini değiştirmeyen görsel hareket.</p></div>
       <div class="legend-tilt" id="legendTiltRow"><label for="tilt">Bakış / eğim</label><output id="tiltValue" for="tilt" aria-hidden="true">0°</output><input id="tilt" type="range" min="-35" max="35" step="1" value="0" aria-valuetext="0 derece"><span>Çekim alanına farklı açılardan bakın.</span></div>
-      <p class="legend-foot">Bir ize dokunarak katılımcıyı seçin.<br>Sürükleyin, yakınlaşın, ayrıntıları keşfedin.<br><span class="desktop-help">Shift + sürükle · eğ / F · görünümü sıfırla</span></p>
+      <button id="cameraJourney" class="camera-journey" aria-pressed="false">${icon('arrow')}<span id="cameraJourneyLabel">Kara deliğe yaklaş</span></button>
+      <section id="udpOutput" class="udp-output" aria-labelledby="udpTitle"><h3 id="udpTitle">Ses çıkışı · UDP</h3><p class="udp-route">127.0.0.1:6061</p><p id="udpExplanation">Hazırlamak ses göndermez. Ardından Oynat ile kayıtlı nota ve hareketleri ses yönlendirmesine gönderin.</p><button id="udpEnable">UDP çıkışını hazırla</button><button id="udpDisable" hidden>Çıkışı kapat</button><p id="udpStatus" role="status" aria-live="polite"></p></section>
+      <p class="legend-foot">Bir ize dokunarak katılımcıyı seçin.<br>Sürükle · yörüngede dön / tekerlek · yaklaş<br><span class="desktop-help">Shift + sürükle · kaydır / F · görünümü sıfırla</span></p>
     </aside>
     <div id="loading" class="loading-indicator" role="status" hidden><span class="spinner" aria-hidden="true"></span><span id="loadingLabel">Eser yükleniyor</span></div>
     <section class="panel library" id="libPanel" aria-labelledby="libraryTitle" hidden>
@@ -104,7 +107,7 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
       <div class="transport-center"><button id="play" class="play" aria-label="Oynat" title="Oynat / duraklat · Boşluk">${icon('play')}</button><button id="restart" class="transport-icon" aria-label="Baştan oynat" title="Baştan oynat">${icon('restart')}</button><div class="timeline"><span id="clock" class="clock" aria-hidden="true">00:00</span><label for="scrub" class="sr-only">Oynatma konumu</label><input id="scrub" type="range" min="0" max="180000" value="0" step="50" aria-valuetext="00:00"><span id="duration" class="clock duration" aria-hidden="true">03:00</span></div><label class="sr-only" for="speed">Oynatma hızı</label><select id="speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option></select></div>
       <div class="transport-tools"><button id="final" class="transport-icon" aria-label="Eserin tamamını göster" title="Son hâl">${icon('final')}</button><button id="fit" class="transport-icon" aria-label="Eseri ekrana sığdır" title="Ekrana sığdır · F">${icon('fit')}</button><button id="export" class="export-button" aria-label="4K eser önizlemesini hazırla" title="4096 × 4096 PNG">${icon('export')}<span id="exportLabel">Görseli kaydet</span><span class="export-tag">4K</span></button></div>
     </nav>
-    <footer class="footer"><div class="footer-help">Sürükle, keşfet <span aria-hidden="true">·</span> Bir ize dokun<span class="desktop-help"> <span aria-hidden="true">·</span> Yakınlaş: tekerlek <span aria-hidden="true">·</span> Sahne: H</span></div><div class="footer-right">COSMIC SYMPHONY / DATA ART</div></footer>
+    <footer class="footer"><div class="footer-help">Sürükle · yörüngede dön<span class="desktop-help"> <span aria-hidden="true">·</span> Shift · kaydır <span aria-hidden="true">·</span> Tekerlek · yaklaş <span aria-hidden="true">·</span> Sahne: H</span></div><div class="footer-right">COSMIC SYMPHONY / DATA ART</div></footer>
     <button id="focusReturn" class="focus-return" hidden>${icon('focus')}<span>Arayüzü göster</span><span class="desktop-help"> · H</span></button>
     <dialog id="exportPreview" class="export-preview" aria-labelledby="exportPreviewTitle" aria-describedby="exportPreviewMeta">
       <header class="export-preview-head"><div><div class="drawer-eyebrow">2000 TRACES / BASKI</div><h2 id="exportPreviewTitle">Eserin son hâli</h2></div><button id="closeExportPreview" aria-label="Eser önizlemesini kapat" autofocus>${icon('close')}</button></header>
@@ -134,6 +137,7 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
   let gestureState = null;
   let gestureSummary = null;
   let orbitMotion = false;
+  let udpEnabled = false; let udpBusy = false; let simulatedArtwork = false;
   const deleteTimers = new Set();
   const write = (id, value) => { const text = String(value ?? ''); if ($(id).textContent !== text) $(id).textContent = text; };
   const announce = (value) => write('announcement', value);
@@ -148,10 +152,14 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
   // Keyboard activation keeps its focus indicator and follows button semantics.
   const click = (id, callback) => { $(id).onclick = (event) => { if (event.detail) event.currentTarget.blur(); run(callback); }; };
   const syncDisabled = () => {
-    for (const id of ['play', 'restart', 'scrub', 'speed', 'final']) $(id).disabled = liveMode || !hasArtwork;
+    for (const id of ['play', 'restart', 'scrub', 'speed', 'final']) $(id).disabled = liveMode || !hasArtwork || udpBusy;
     $('export').disabled = liveMode || !hasArtwork || exportPending || loading;
-    $('pack').disabled = liveMode;
-    $('demo').disabled = liveMode || loading;
+    $('pack').disabled = liveMode || udpEnabled || udpBusy;
+    $('demo').disabled = liveMode || loading || udpEnabled || udpBusy;
+    $('home').disabled = udpEnabled || udpBusy;
+    $('rec').disabled = udpEnabled || udpBusy;
+    $('udpEnable').disabled = liveMode || !hasArtwork || simulatedArtwork || udpBusy || loading;
+    for (const option of $('speed').options) option.disabled = udpEnabled && Number(option.value) > 4;
   };
   const validAxis = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
   const syncInspection = () => {
@@ -301,6 +309,8 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
   click('closeExportPreview', () => closeExportPreview());
   click('demo', onDemo);
   click('home', onHome);
+  click('cameraJourney', onJourney);
+  click('udpEnable', onUdpEnable); click('udpDisable', onUdpDisable); click('udpOutputBadge', onUdpDisable);
   click('orbitMotion', () => { setOrbitMotion(!orbitMotion); run(onOrbitMotion, orbitMotion); });
   click('readArtwork', () => setLegendOpen($('legendPanel').hidden));
   click('closeLegend', () => setLegendOpen(false));
@@ -322,6 +332,8 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
   });
   $('demo').hidden = !onDemo;
   $('home').hidden = !onHome;
+  $('cameraJourney').hidden = !onJourney;
+  $('udpOutput').hidden = !onUdpEnable;
   $('orbitMotionRow').hidden = !onOrbitMotion;
 
   window.addEventListener('keydown', (event) => {
@@ -408,7 +420,8 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
       for (const pack of available) {
         const row = document.createElement('article'); row.className = 'libRow';
         const title = document.createElement('div'); title.className = 'lib-title'; title.textContent = pack.label || pack.name;
-        const open = makeButton('Eseri aç ↗', () => { run(onPack, pack.name); setLibraryOpen(false); }); open.disabled = liveMode;
+        const open = makeButton('Eseri aç ↗', () => { run(onPack, pack.name); setLibraryOpen(false); }); open.disabled = liveMode || udpEnabled || udpBusy;
+        open.disabled = liveMode || udpEnabled || udpBusy;
         open.setAttribute('aria-label', `${pack.label || pack.name} eserini aç`); row.append(title, open); body.append(row);
       }
       if (query && !available.length) empty('Bu aramada bir iz bulunamadı.', 'Farklı bir kayıt adıyla yeniden deneyin.');
@@ -433,15 +446,15 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
     for (const pack of packList) {
       const title = pack.label || pack.name;
       const open = makeButton('Eseri aç ↗', () => { run(libraryHandlers.onOpen, pack.name); setLibraryOpen(false); });
-      open.setAttribute('aria-label', `${title} eserini aç`); open.disabled = liveMode;
-      const remove = makeButton('Sil', null, 'danger'); armedDelete(remove, () => libraryHandlers.onDeletePack?.(pack.name), title); remove.disabled = liveMode;
+      open.setAttribute('aria-label', `${title} eserini aç`); open.disabled = liveMode || udpEnabled || udpBusy;
+      const remove = makeButton('Sil', null, 'danger'); armedDelete(remove, () => libraryHandlers.onDeletePack?.(pack.name), title); remove.disabled = liveMode || udpEnabled || udpBusy;
       row(title, `${number(pack.lanes)} katılımcı · ${number(pack.events ?? 0)} etkileşim`, [open, remove]);
     }
     if (sessionList.length) section('İşlenmemiş kayıtlar');
     for (const session of sessionList) {
       const title = session.label || session.file;
-      const process = makeButton('Esere dönüştür', () => libraryHandlers.onPackSession?.(session.file)); process.disabled = liveMode;
-      const remove = makeButton('Sil', null, 'danger'); armedDelete(remove, () => libraryHandlers.onDeleteSession?.(session.file), title); remove.disabled = liveMode;
+      const process = makeButton('Esere dönüştür', () => libraryHandlers.onPackSession?.(session.file)); process.disabled = liveMode || udpEnabled || udpBusy;
+      const remove = makeButton('Sil', null, 'danger'); armedDelete(remove, () => libraryHandlers.onDeleteSession?.(session.file), title); remove.disabled = liveMode || udpEnabled || udpBusy;
       row(title, `${(Number(session.bytes || 0) / 1048576).toFixed(1)} MB · ${session.complete ? 'Kayıt tamamlandı' : 'Tamamlanmamış kayıt'}`, [process, remove]);
     }
     if (!packList.length && !sessionList.length) empty(query ? 'Bu aramada bir iz bulunamadı.' : 'İlk iz henüz bırakılmadı.', query ? 'Farklı bir kayıt adıyla yeniden deneyin.' : 'Canlı akıştan bir kayıt oluşturun veya örnek eseri keşfedin.');
@@ -471,6 +484,8 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
       const selectedPack = knownPacks.find((pack) => pack.name === $('pack').value);
       if (!liveMode && !demo && selectedPack && manifest.label) selectedPack.label = manifest.label;
       const simulated = demo || manifest.simulated === true;
+      simulatedArtwork = simulated;
+      write('udpExplanation', simulated ? 'Örnek eserlerde UDP çıkışı kapalıdır. Ses için kaydedilmiş bir oturum açın.' : 'Hazırlamak ses göndermez. Ardından Oynat ile kayıtlı nota ve hareketleri ses yönlendirmesine gönderin.');
       write('participants', number(manifest.laneCount)); write('events', number(manifest.eventCount));
       write('workKicker', liveMode ? 'Canlı kayıt' : simulated ? 'Örnek veri · simülasyon' : 'Kolektif kayıt');
       write('workName', manifest.label || manifest.sessionId || 'İsimsiz kayıt');
@@ -484,7 +499,7 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
     setLoading(on, label) { loading = !!on; el.dataset.loading = String(loading); $('loading').hidden = !loading; write('loadingLabel', label || 'Eser yükleniyor'); syncDisabled(); },
     setConnection,
     setEmpty(message) {
-      hasArtwork = false; seatInfo = null; setGestureState(null); setGestureSummary(null); write('participants', '—'); write('events', '—'); write('workKicker', 'Kolektif arşiv'); write('workName', 'İlk iz için hazır'); write('workFormat', 'Ses · hareket · zaman');
+      hasArtwork = false; simulatedArtwork = false; seatInfo = null; setGestureState(null); setGestureSummary(null); write('participants', '—'); write('events', '—'); write('workKicker', 'Kolektif arşiv'); write('workName', 'İlk iz için hazır'); write('workFormat', 'Ses · hareket · zaman');
       $('demo').hidden = !onDemo; setStats(message || 'Arşivden bir eser seçin veya örnek eseri keşfedin.'); setConnection('offline'); syncDisabled();
     },
     setViewMode(mode) {
@@ -498,7 +513,24 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
       write('legendIntro', mode === 'record' || mode === 'live' ? 'Katılımcıların hareketleriyle oluşan bir çekim alanı.' : 'Kayıtlı hareketlerden oluşan bir çekim alanı.');
     },
     setGestureState, setGestureSummary, setOrbitMotion,
+    setUdpState({ enabled = false, busy = false, status = null, error = null, stale = false } = {}) {
+      const changed = udpEnabled !== !!enabled || udpBusy !== !!busy;
+      udpEnabled = !!enabled; udpBusy = !!busy;
+      const labels = { READY: 'Hazır · Oynat ile başlatın', PLAYING: 'UDP gönderiliyor', PAUSED: 'UDP duraklatıldı', COMPLETE: 'UDP oynatımı tamamlandı', ERROR: 'UDP işlemi durdu' };
+      write('udpStatus', error || (busy ? 'UDP işlemi sürüyor…' : enabled ? labels[status?.state] || 'UDP hazırlanıyor' : 'Kapalı · görsel oynatma sessizdir'));
+      $('udpStatus').classList.toggle('error', !!error);
+      $('udpEnable').hidden = enabled;
+      $('udpDisable').hidden = !enabled && !busy;
+      $('udpOutputBadge').hidden = !enabled && !busy;
+      write('udpOutputBadge', `${stale || error ? 'UDP durumu belirsiz' : status?.state === 'PLAYING' ? 'UDP gönderiliyor' : busy ? 'UDP bekleniyor' : 'UDP hazır'} · çıkışı kapat`);
+      if (enabled && status?.speed) $('speed').value = String(status.speed);
+      if (changed) { syncDisabled(); if (libraryModel && !$('libPanel').hidden) drawLibrary(); }
+    },
     setExportState,
+    setJourneyState(active) {
+      $('cameraJourney').setAttribute('aria-pressed', String(!!active));
+      write('cameraJourneyLabel', active ? 'Yolculuğu durdur' : 'Kara deliğe yaklaş');
+    },
     setTilt(radians) {
       const degrees = Math.max(-35, Math.min(35, Math.round((Number(radians) || 0) * 180 / Math.PI)));
       $('tilt').value = String(degrees); write('tiltValue', `${degrees}°`);

@@ -25,6 +25,17 @@ export const NEBULA_TRANSFORM = /* glsl */ `
   }
 `;
 
+// World widths are measured at each primitive's camera depth. Orthographic
+// print cameras keep the existing pixels-per-world scale unchanged.
+export const NEBULA_PIXEL_SCALE = /* glsl */ `
+  uniform float uViewportHeight;
+  float nebulaPixelScale(vec3 viewPosition) {
+    if(projectionMatrix[3][3]<0.5)
+      return 0.5*uViewportHeight*projectionMatrix[1][1]/max(0.0001,-viewPosition.z);
+    return uPointScale;
+  }
+`;
+
 export const DUST_VERTEX = /* glsl */ `
   attribute vec4 aData; // event time, participant lane, note onset, light temperature
   attribute vec2 aSize; // world-space sprite diameter, radiance
@@ -39,14 +50,16 @@ export const DUST_VERTEX = /* glsl */ `
   varying float vNote;
   varying float vRotation;
   ${NEBULA_TRANSFORM}
+  ${NEBULA_PIXEL_SCALE}
   void main() {
     vec3 p = nebulaTransform(position);
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+    vec4 viewPosition=modelViewMatrix*vec4(p,1.0);
+    gl_Position = projectionMatrix*viewPosition;
     float focus = 1.0-step(0.5, abs(aData.y-uSelLane));
     float hover = (1.0-step(0.5, abs(aData.y-uHoverLane)))*0.5;
     float isolation = uSelLane < -0.5 ? 1.0 : mix(0.12, 2.3, focus);
     float recent = exp(-max(0.0, uTime-aData.x)/550.0)*uReplaying;
-    float diameter = aSize.x*uPointScale*(1.0+focus*0.2+hover*0.15);
+    float diameter = aSize.x*nebulaPixelScale(viewPosition.xyz)*(1.0+focus*0.2+hover*0.15);
     float rasterSize = clamp(diameter, 1.5, uPointMax);
     gl_PointSize = rasterSize;
     float coverage = min(1.0, diameter*diameter/(rasterSize*rasterSize));
@@ -63,6 +76,7 @@ export const DUST_VERTEX = /* glsl */ `
 export const DUST_FRAGMENT = /* glsl */ `
   precision highp float;
   uniform float uAtmosphere;
+  uniform float uDepthPass;
   varying vec3 vColor;
   varying float vAlpha;
   varying float vNote;
@@ -76,6 +90,10 @@ export const DUST_FRAGMENT = /* glsl */ `
     if(r2>1.0 || vAlpha<0.00001) discard;
     float envelope = exp(-r2*mix(5.5,3.5,uAtmosphere));
     envelope *= 1.0-smoothstep(0.60,1.0,r2);
+    if(uDepthPass>0.5) {
+      if(uAtmosphere>0.5 || r2>0.16 || vAlpha*envelope<0.03) discard;
+      gl_FragColor=vec4(0.0); return;
+    }
     float core=exp(-r2*42.0)*(1.0-uAtmosphere);
     float star=exp(-abs(q.x)*55.0-abs(q.y)*5.0)+exp(-abs(q.x)*5.0-abs(q.y)*55.0);
     vec3 radiance=vColor*envelope;
@@ -102,8 +120,9 @@ export const ATMOSPHERE_VERTEX = /* glsl */ `
   void main() {
     vec3 p=nebulaTransform(aCenter);
     vRotation=atan(p.y,p.x)+0.5;
-    p.xy+=position.xy*aSize.x;
-    gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);
+    vec4 viewPosition=modelViewMatrix*vec4(p,1.0);
+    viewPosition.xy+=position.xy*aSize.x;
+    gl_Position=projectionMatrix*viewPosition;
     float focus=1.0-step(0.5,abs(aData.y-uSelLane));
     float hover=(1.0-step(0.5,abs(aData.y-uHoverLane)))*0.5;
     float isolation=uSelLane < -0.5 ? 1.0 : mix(0.15,2.3,focus);
@@ -129,15 +148,17 @@ export const FILAMENT_VERTEX = /* glsl */ `
   varying float vAcross;
   varying float vCoverage;
   ${NEBULA_TRANSFORM}
+  ${NEBULA_PIXEL_SCALE}
   void main() {
-    vec3 start=nebulaTransform(aStart), end=nebulaTransform(aEnd);
+    vec3 start=(modelViewMatrix*vec4(nebulaTransform(aStart),1.0)).xyz;
+    vec3 end=(modelViewMatrix*vec4(nebulaTransform(aEnd),1.0)).xyz;
     vec2 delta=end.xy-start.xy;
     vec2 perpendicular=vec2(-delta.y,delta.x)/max(length(delta),0.0000001);
     float width=0.00055+aData.w*0.0008;
-    float expanded=max(width,1.5/max(uPointScale,1.0));
     vec3 p=mix(start,end,position.x);
+    float expanded=max(width,1.5/max(nebulaPixelScale(p),1.0));
     p.xy+=perpendicular*position.y*expanded;
-    gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);
+    gl_Position=projectionMatrix*vec4(p,1.0);
     vAcross=position.y*2.0;
     vCoverage=width/expanded;
     float focus=1.0-step(0.5,abs(aData.y-uSelLane));
@@ -150,35 +171,47 @@ export const FILAMENT_VERTEX = /* glsl */ `
 
 export const FILAMENT_FRAGMENT = /* glsl */ `
   precision highp float;
+  uniform float uDepthPass;
   varying vec3 vColor;
   varying float vAlpha;
   varying float vAcross;
   varying float vCoverage;
   void main() {
+    if(uDepthPass>0.5) {
+      if(vAlpha<0.02 || abs(vAcross)>0.30) discard;
+      gl_FragColor=vec4(0.0); return;
+    }
     float aa=max(fwidth(vAcross)*0.5,0.0001);
     float coverage=1.0-smoothstep(1.0-aa,1.0+aa,abs(vAcross));
     gl_FragColor=vec4(vColor,coverage*vCoverage*vAlpha);
   }
 `;
 
+// Every core surface is actual world geometry. These varyings provide camera-
+// space normals and directions, so changing viewpoint changes its silhouette,
+// occlusion and emission coherently instead of merely rotating a screen quad.
 export const CORE_VERTEX = /* glsl */ `
   varying vec2 vUv;
+  varying vec3 vLocal;
+  varying vec3 vNormal;
+  varying vec3 vView;
+  ${NEBULA_TRANSFORM}
   void main() {
     vUv=uv;
-    gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);
+    vLocal=position;
+    vec4 viewPosition=modelViewMatrix*vec4(nebulaTransform(position),1.0);
+    vNormal=normalize(normalMatrix*nebulaTransform(normal));
+    vView=-viewPosition.xyz;
+    gl_Position=projectionMatrix*viewPosition;
   }
 `;
 
-export const CORE_FRAGMENT = /* glsl */ `
+export const HORIZON_FRAGMENT = /* glsl */ `
   precision highp float;
-  uniform float uTime;
-  uniform float uDuration;
-  uniform float uOrbit;
-  uniform float uTilt;
-  uniform float uActivity;
-  uniform float uAnimation;
-  varying vec2 vUv;
+  void main() { gl_FragColor=vec4(0.0,0.0,0.0,1.0); }
+`;
 
+const PLASMA_NOISE = /* glsl */ `
   float hash(vec2 p) {
     p=fract(p*vec2(123.34,456.21));
     p+=dot(p,p+45.32);
@@ -193,64 +226,78 @@ export const CORE_FRAGMENT = /* glsl */ `
   float plasma(vec2 p) {
     return noise(p)*0.57+noise(p*2.07+17.4)*0.29+noise(p*4.13-8.2)*0.14;
   }
-  float gaussian(float distance,float width) {
-    float d=distance/max(width,0.0001);
-    return exp(-d*d);
-  }
+`;
+
+export const CORE_FRAGMENT = /* glsl */ `
+  precision highp float;
+  uniform float uActivity;
+  uniform float uAnimation;
+  uniform float uCoronaLayer;
+  varying vec2 vUv;
+  varying vec3 vLocal;
+  varying vec3 vNormal;
+  varying vec3 vView;
+  ${PLASMA_NOISE}
   void main() {
-    vec2 p=vUv-0.5;
-    float radius=length(p);
-    if(radius>0.47) discard;
     float flow=sqrt(clamp(uActivity,0.0,1.0));
-    float phase=uOrbit+uTime/max(uDuration,1.0)*3.45575191895+uAnimation*0.18;
-    float angle=atan(p.y,p.x)-phase;
+    float angle=atan(vLocal.y,vLocal.x)-uAnimation*0.18;
+    float radius=length(vLocal.xy);
+    vec2 orbit=vec2(cos(angle),sin(angle));
+    float cloud=plasma(orbit*4.5+vec2(radius*31.0-uAnimation*0.11,uAnimation*0.07));
+    float detail=plasma(orbit*13.0+vec2(radius*80.0+uAnimation*0.08,-uAnimation*0.06));
+    vec3 n=normalize(vNormal)*(gl_FrontFacing?1.0:-1.0);
+    vec3 view=normalize(vView);
+    float facing=max(0.0,dot(n,view));
+    float fresnel=pow(1.0-facing,2.3);
+    float approaching=pow(0.5+0.5*sin(angle+uAnimation*0.18+0.7),2.0);
+    float phase=radius*930.0+cloud*19.0+sin(angle*7.0)*1.7-uAnimation*1.25;
+    float fine=pow(0.5+0.5*sin(phase),18.0);
+    // Preserve integrated filament light when radial strands become subpixel,
+    // instead of letting a distant view turn into a moire pattern.
+    float strands=mix(fine,0.132,clamp(fwidth(phase)/3.14159265,0.0,1.0));
+    float broad=pow(0.5+0.5*sin(radius*270.0+cloud*3.0-angle*1.8),5.0);
+    float boundary=smoothstep(0.224,0.238,radius)*(1.0-smoothstep(0.355,0.397,radius));
+    float streams=(0.32+smoothstep(0.16,0.78,cloud)*0.68)*(0.65+detail*0.35);
+    float density=boundary*streams;
+    float radiance=(0.055+broad*0.24+strands*11.8)*density*(0.95+flow*1.30)*(0.55+approaching*0.90);
+    float heat=clamp((0.395-radius)/0.172*0.7+strands*0.55,0.0,1.0);
+    vec3 color=mix(vec3(1.0,0.32,0.045),vec3(1.55,1.32,0.97),heat);
+    float alpha=(0.012+strands*0.11)*density;
+    if(uCoronaLayer>0.5 && uCoronaLayer<1.5) {
+      // A larger translucent toroidal shell supplies true spatial haze.
+      radiance=(0.004+flow*0.009)*cloud*pow(facing,2.0);
+      color=vec3(0.055,0.21,0.48);
+      alpha=0.001*cloud*pow(facing,2.0);
+    }
+    else if(uCoronaLayer>1.5) {
+      radiance=(2.0+flow*1.6)*(0.6+cloud*0.45)*(0.65+approaching*0.60);
+      color=mix(vec3(1.0,0.57,0.18),vec3(1.45,1.16,0.73),approaching);
+      alpha=0.08;
+    }
+    else {
+      // Empty intervals are genuinely transparent, including depth. The disk
+      // reads as emitted plasma streams rather than a lit opaque brown tube.
+      if(density<0.002)discard;
+    }
+    gl_FragColor=vec4(color*radiance,alpha);
+  }
+`;
 
-    // The black horizon remains spherical; the emitting torus follows the
-    // inclination and roll of the recorded gesture field around it.
-    vec2 plane=mat2(0.9689124217,0.2474039593,-0.2474039593,0.9689124217)*p;
-    float inclination=0.6981317008+uTilt;
-    plane.y/=max(0.23,abs(cos(inclination)));
-    float diskRadius=length(plane);
-    float diskAngle=atan(plane.y,plane.x)-phase;
-    float bend=0.04/(0.12+max(0.0,radius-0.205));
-    vec2 orbit=vec2(cos(diskAngle+bend),sin(diskAngle+bend));
-    float cloud=plasma(orbit*4.5+vec2(diskRadius*31.0-uAnimation*0.11,uAnimation*0.07));
-    float detail=plasma(orbit*13.0+vec2(diskRadius*80.0+uAnimation*0.08,-uAnimation*0.06));
-
-    float majorRadius=0.255+(cloud-0.5)*(0.010+flow*0.008);
-    float tubeWidth=0.030+flow*0.015;
-    float tube=gaussian(diskRadius-majorRadius,tubeWidth);
-    float tubeSide=clamp((diskRadius-majorRadius)/tubeWidth,-1.0,1.0);
-    vec3 normal=vec3(normalize(plane+vec2(0.00001))*tubeSide,sqrt(max(0.0,1.0-tubeSide*tubeSide)));
-    float lighting=0.32+0.68*max(0.0,dot(normal,normalize(vec3(-0.45,0.6,0.9))));
-    float approaching=pow(0.5+0.5*sin(diskAngle+phase+0.7),2.0);
-    float turbulent=0.14+cloud*0.67+pow(detail,4.0)*0.72;
-    float hotStrands=pow(0.5+0.5*sin(diskRadius*670.0+cloud*12.0-phase*10.0),8.0);
-    float torus=tube*turbulent*lighting*(0.16+flow*0.32);
-    torus+=tube*hotStrands*detail*(0.015+flow*0.060);
-
-    // A narrow photon arc and a displaced secondary arc suggest bent light;
-    // the procedural texture only describes plasma, never additional data.
-    float aa=max(fwidth(radius)*0.7,0.0011);
-    float photonRadius=0.208+(cloud-0.5)*0.0014;
-    float photon=gaussian(radius-photonRadius,aa+0.0006+flow*0.0008);
-    float secondary=gaussian(radius-0.218,0.0024)*(0.2+approaching*0.8);
-    float arcNoise=plasma(vec2(cos(angle),sin(angle))*9.0+uAnimation*0.08);
-    photon*=0.42+arcNoise*0.62;
-    float arc=(photon*(0.55+approaching*1.2)+secondary*0.22)*(0.65+flow*0.95);
-    float scattered=gaussian(radius-0.238,0.048)*(0.015+flow*0.033)*(0.30+cloud*0.7);
-    scattered+=gaussian(diskRadius-0.29,0.061)*detail*(0.016+flow*0.032);
-
-    vec3 cool=vec3(0.10,0.29,0.50),gold=vec3(1.0,0.43,0.095);
-    vec3 plasmaColor=mix(cool,gold,0.34+approaching*0.66);
-    vec3 photonColor=mix(vec3(0.35,0.65,0.90),vec3(1.0,0.72,0.33),approaching);
-    vec3 light=plasmaColor*torus+photonColor*arc+mix(cool,gold,cloud)*scattered;
-    float core=1.0-smoothstep(0.195,0.206,radius);
-    float reveal=smoothstep(0.200,0.209,radius);
-    light*=reveal;
-    float alpha=max(core,clamp(tube*0.12+scattered*0.20,0.0,0.24)*reveal);
-    // Premultiplied emission preserves underlying dust through the optically
-    // thin corona, while the central sphere truly occludes the background.
-    gl_FragColor=vec4(light,alpha);
+export const PHOTON_SHELL_FRAGMENT = /* glsl */ `
+  precision highp float;
+  uniform float uActivity;
+  uniform float uAnimation;
+  varying vec3 vNormal;
+  varying vec3 vView;
+  varying vec3 vLocal;
+  void main() {
+    vec3 n=normalize(vNormal),view=normalize(vView);
+    float rim=pow(1.0-max(0.0,dot(n,view)),24.0);
+    float angle=atan(vLocal.y,vLocal.x);
+    float warmth=0.5+0.5*sin(angle+0.6);
+    float striation=0.85+0.15*sin(angle*13.0-uAnimation*0.65);
+    float emission=rim*striation*(0.82+sqrt(clamp(uActivity,0.0,1.0))*0.95);
+    vec3 color=mix(vec3(1.0,0.51,0.14),vec3(1.35,1.04,0.60),warmth);
+    gl_FragColor=vec4(color*emission,0.0);
   }
 `;

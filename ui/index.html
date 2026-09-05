@@ -52,6 +52,10 @@
           <div class="telemetry-note"><span class="note-icon" aria-hidden="true">↳</span><p>İstatistikler sunucudan gelir.<br><span id="updated-at">İlk güncelleme bekleniyor.</span></p></div>
         </section>
       </div>
+      <section class="udp-replay surface" aria-labelledby="udp-heading">
+        <div><div class="section-top"><h2 id="udp-heading">UDP tekrar oynatımı</h2><span id="udp-state" class="state" role="status">ÇIKIŞ KAPALI</span></div><p id="udp-summary">Kayıtlı bir eserden, görselleştiricideki UDP çıkışı kontrolüyle başlatılır.</p><code id="udp-route">127.0.0.1:6061</code></div>
+        <button id="udp-stop" type="button" class="button stop" disabled>■ UDP'yi durdur</button>
+      </section>
       <section class="archive" aria-labelledby="archive-heading">
         <div class="archive-heading"><div><p class="eyebrow">SESSION ARCHIVE</p><h2 id="archive-heading">Oturumlar <span id="session-count">—</span></h2></div><span class="archive-caption">Ham kayıt · JSONL</span></div>
         <div class="archive-body surface"><p class="library-message" id="library-message" role="status">Oturumlar yükleniyor…</p><div class="table-scroll" id="sessions-table-wrap" hidden><table><thead><tr><th scope="col">Oturum / son güncelleme</th><th scope="col">Katılımcı</th><th scope="col">Olay</th><th scope="col">Durum</th><th scope="col">Dosya</th></tr></thead><tbody id="sessions"></tbody></table></div></div>

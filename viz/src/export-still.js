@@ -6,8 +6,10 @@ import * as THREE from 'three';
 
 export async function exportStill({ renderer, scene, uniforms, playheadMat = null, sessionId, size = 4096, render, mode = 'nebula', activity = 0 }) {
   const extent = 1.12;
-  const camera = new THREE.OrthographicCamera(-extent, extent, extent, -extent, -10, 10);
-  camera.position.z = 1;
+  const camera = new THREE.PerspectiveCamera(45, 1, .008, 80);
+  camera.position.z = extent / Math.sin(Math.PI / 8);
+  camera.lookAt(0, 0, 0);
+  camera.updateMatrixWorld();
 
   const target = new THREE.WebGLRenderTarget(size, size, { samples: render ? 0 : 4 });
   const prevTime = uniforms.uTime.value;
@@ -24,6 +26,8 @@ export async function exportStill({ renderer, scene, uniforms, playheadMat = nul
   const prevOrbit = uniforms.uOrbit?.value;
   const prevAnimation = uniforms.uAnimation?.value;
   const prevActivity = uniforms.uActivity?.value;
+  const prevViewport = uniforms.uViewportHeight?.value;
+  if (uniforms.uViewportHeight) uniforms.uViewportHeight.value = size;
   if (uniforms.uAnimation) uniforms.uAnimation.value = 0;
   if (uniforms.uActivity) uniforms.uActivity.value = Math.max(0, Math.min(1, activity));
   if (uniforms.uTilt) uniforms.uTilt.value = 0;
@@ -57,6 +61,7 @@ export async function exportStill({ renderer, scene, uniforms, playheadMat = nul
     if (uniforms.uOrbit) uniforms.uOrbit.value = prevOrbit;
     if (uniforms.uAnimation) uniforms.uAnimation.value = prevAnimation;
     if (uniforms.uActivity) uniforms.uActivity.value = prevActivity;
+    if (uniforms.uViewportHeight) uniforms.uViewportHeight.value = prevViewport;
     if (playheadMat) playheadMat.opacity = prevPlayhead;
   }
 

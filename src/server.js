@@ -2,7 +2,7 @@
 import { createServer } from 'node:http';
 import {
   readFileSync, writeFileSync, readdirSync, statSync, createReadStream, existsSync,
-  unlinkSync, rmSync, renameSync,
+  unlinkSync, rmSync, renameSync, realpathSync,
 } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { recordFromSource } from './recorder.js';
@@ -11,6 +11,7 @@ import { packSession, TYPE_CODES } from './viz-pack.js';
 import { listLibrary, readSessionMeta } from './library.js';
 import { loadEnv } from './env.js';
 import { liveSource } from './sources/live-source.js';
+import { createUdpReplay } from './udp-replay.js';
 
 const LIVE_FLUSH_MS = 40;
 
@@ -60,6 +61,7 @@ const readBody = (req, limit = 1 << 20) => new Promise((resolvBody, reject) => {
 export function createControlServer({
   sessionsDir, sourceFactory, durationMs = DEFAULT_DURATION_MS,
   packsDir = null, autoPack = false,
+  replayOptions = {},
 }) {
   let phase = 'IDLE'; // mirrors session states between runs
   let current = null; // { sessionId, controller, session, killer }
@@ -67,6 +69,8 @@ export function createControlServer({
   let finalizing = null; // { sessionId, stats, participants } while packSession runs
   let lastError = null; // { message, sessionId, at } from a failed take, until the next start
   let server = null;
+  const replay = createUdpReplay({ ...replayOptions,
+    canPlay: () => !current && !finalizing && phase !== 'ARMED' && phase !== 'RECORDING' && phase !== 'FINALIZING' });
 
   // --- live re-broadcast hub (viewer draws while the recorder records) -----
   const liveClients = new Set();
@@ -114,6 +118,7 @@ export function createControlServer({
     label: current?.label ?? finalizing?.label ?? lastSummary?.label ?? '',
     startedAtLocalMs: current?.session?.meta?.().startedAtLocalMs ?? finalizing?.startedAtLocalMs ?? lastSummary?.startedAtLocalMs ?? null,
     endedAtLocalMs: current ? null : finalizing?.endedAtLocalMs ?? lastSummary?.endedAtLocalMs ?? null,
+    udpReplay: replay.status(),
   });
 
   // The take being recorded (or packed right after) must never be packed over
@@ -125,6 +130,20 @@ export function createControlServer({
 
   const handlers = {
     'GET /api/status': (req, res) => json(res, status()),
+    'GET /api/replay/status': (req, res) => json(res, replay.status()),
+    'POST /api/replay/load': (req, res) => replayCommand(req, res, async (body) => {
+      if (typeof body.file !== 'string' || !body.file.endsWith('.jsonl')) throw new Error('Choose a recorded JSONL session');
+      const path = safeChildPath(sessionsDir, body.file);
+      if (!path || !existsSync(path) || !statSync(path).isFile()) throw new Error('Recorded session not found');
+      if (!realpathSync(path).startsWith(realpathSync(sessionsDir) + sep)) throw new Error('Replay file is outside the sessions directory');
+      if (body.file === busySessionFile()) throw new Error('Wait until this recording is finalized');
+      return replay.load(path, body.file);
+    }),
+    'POST /api/replay/play': (req, res) => replayCommand(req, res, (body) => replay.play(body)),
+    'POST /api/replay/pause': (req, res) => replayCommand(req, res, () => replay.pause()),
+    'POST /api/replay/seek': (req, res) => replayCommand(req, res, (body) => replay.seek(body.positionMs)),
+    'POST /api/replay/speed': (req, res) => replayCommand(req, res, (body) => replay.setSpeed(body.speed)),
+    'POST /api/replay/stop': (req, res) => replayCommand(req, res, () => replay.stop()),
     'GET /api/library': (req, res) => json(res, listLibrary({ sessionsDir, packsDir })),
     'POST /api/pack': async (req, res) => {
       let body;
@@ -154,6 +173,7 @@ export function createControlServer({
       }
     },
     'POST /api/arm': (req, res) => {
+      if (replay.blocksRecording()) return json(res, { error: 'Stop UDP replay before arming a recording' }, 409);
       if (phase === 'ARMED') {
         // second arm = disarm: an accidental arm must not force a junk take
         phase = 'IDLE';
@@ -166,6 +186,7 @@ export function createControlServer({
       json(res, status());
     },
     'POST /api/start': async (req, res) => {
+      if (replay.blocksRecording()) return json(res, { error: 'Stop UDP replay before starting a recording' }, 409);
       if (phase !== 'ARMED') return json(res, { error: `cannot start from ${phase}` }, 409);
       // an empty body is fine (no label offered); malformed JSON is a client error
       let label = '';
@@ -289,6 +310,26 @@ export function createControlServer({
     res.end(JSON.stringify(obj));
   }
 
+  async function replayCommand(req, res, action) {
+    // The viewer runs on another loopback port. Allow that local origin while
+    // preventing an unrelated website from silently starting workstation UDP.
+    try {
+      if (!['127.0.0.1', 'localhost', '[::1]'].includes(new URL(`http://${req.headers.host}`).hostname)) throw new Error('host');
+      if (req.headers.origin) {
+        const origin = new URL(req.headers.origin);
+        if (origin.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(origin.hostname)) throw new Error('origin');
+      }
+    } catch { return json(res, { error: 'UDP replay commands require a local origin' }, 403); }
+    let body;
+    try {
+      const raw = await readBody(req, 16384);
+      body = raw.trim() ? JSON.parse(raw) : {};
+      if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('invalid body');
+    } catch { return json(res, { error: 'invalid replay JSON body' }, 400); }
+    try { json(res, await action(body)); }
+    catch (error) { json(res, { error: error?.message ?? 'Replay command failed', replay: replay.status() }, 409); }
+  }
+
   function sessionFilePath(url) {
     const name = decodeName(url, '/sessions/');
     return name === null ? null : safeChildPath(sessionsDir, name);
@@ -299,6 +340,7 @@ export function createControlServer({
     const f = name === null ? null : safeChildPath(sessionsDir, name);
     if (!f) return json(res, { error: 'invalid name' }, 400);
     if (name === busySessionFile()) return json(res, { error: 'session is still recording' }, 409);
+    if (name === replay.status().file && replay.isPlaying()) return json(res, { error: 'session is playing through UDP' }, 409);
     try { unlinkSync(f); } catch (err) {
       if (err?.code === 'ENOENT') return json(res, { error: 'no such session' }, 404);
       return json(res, { error: err?.message ?? String(err) }, 500);
@@ -372,12 +414,16 @@ export function createControlServer({
       return new Promise((r) => server.listen(port, '127.0.0.1', () => r()));
     },
     port: () => server.address().port,
-    close: () => new Promise((r) => {
+    close: async () => {
+      current?.controller.abort();
+      try { await replay.close(); }
+      finally { await new Promise((r) => {
       clearInterval(flushTimer);
       for (const res of liveClients) res.end();
       liveClients.clear();
       server.close(r);
-    }),
+      }); }
+    },
   };
 }
 
@@ -393,4 +439,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   });
   await srv.listen(Number(process.env.PANEL_PORT ?? 8787));
   console.log(`2000 TRACES recorder panel: http://127.0.0.1:${srv.port()}/`);
+  let closing = false;
+  const shutdown = async () => {
+    if (closing) return; closing = true;
+    try { await srv.close(); } catch (error) { console.error('Shutdown cleanup failed:', error.message); process.exitCode = 1; }
+  };
+  process.on('SIGINT', shutdown); process.on('SIGTERM', shutdown);
 }

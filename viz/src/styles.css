@@ -287,3 +287,18 @@ body[data-theme="nebula"] { --ground: #03070c; --ink: #e2eaf0; --dim: #a2b6c4; -
 @media (max-height: 760px) and (min-width: 701px) { .cover-editorial { top: 18%; } .cover-eyebrow { margin-bottom: 22px; } .cover-title-stars { font-size: min(11vw, 130px); } .cover-title-year { font-size: min(6vw, 70px); } .cover-copy { margin-top: 19px; font-size: 9px; } .cover-enter { margin-top: 14px; } }
 @media (max-height: 740px) and (max-width: 700px) { .cover-editorial { top: 20%; } .cover-title-stars { font-size: 99px; } .cover-title-year { font-size: 54px; } .cover-eyebrow { margin-bottom: 18px; } .cover-copy { margin-top: 18px; } .cover-enter { margin-top: 13px; } .cover-horizon-label { display: none; } }
 @media (max-height: 520px) { .cover-header { top: 23px; } .cover-editorial { top: 22%; } .cover-eyebrow, .cover-copy, .cover-horizon-label { display: none; } .cover-title-stars { font-size: 75px; } .cover-title-year { font-size: 44px; } .cover-enter { margin-top: 15px; } .cover-footer { bottom: 22px; } }
+
+.udp-output { margin-top: 22px; padding-top: 17px; border-top: 1px solid var(--line); }
+.udp-output h3 { margin: 0; color: var(--ink); font-size: 10px; font-weight: 450; }
+.udp-output p { color: var(--muted); font-size: 8px; line-height: 1.8; margin: 8px 0; }
+.udp-output .udp-route { font: 8px/1.5 var(--mono); color: var(--dim); }
+.udp-output button { padding: 5px 8px; min-height: 30px; font-size: 8px; border-color: var(--line); margin-top: 3px; }
+.udp-output #udpDisable { color: var(--accent); }
+.udp-output #udpStatus { font: 7px/1.8 var(--mono); margin-bottom: 0; }
+.udp-output #udpStatus.error { color: var(--error); }
+.udp-output-badge { position: absolute; top: 116px; left: 29px; min-height: 24px; padding: 3px 6px; color: var(--accent); font: 7px/1.5 var(--mono); }
+@media (max-width: 520px) { .udp-output-badge { left: 18px; top: 128px; font-size: 6px; } }
+
+.camera-journey { width: 100%; justify-content: flex-start; min-height: 34px; margin-top: 14px; padding: 6px 8px; color: var(--dim); border-color: var(--line); font-size: 9px; gap: 10px; }
+.camera-journey[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+.camera-journey svg { width: 14px; height: 14px; }

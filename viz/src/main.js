@@ -2,11 +2,13 @@
 import { loadPack, EVENT_RECORD_BYTES, TYPE } from './pack-loader.js';
 import { buildLayout, rosterLayout } from './layout.js';
 import { createCover } from './cover.js';
+import { createUdpReplayClient, replayErrorMessage } from './udp-replay-client.js';
 import { DEFAULT_DURATION_MS } from '../../src/constants.js';
 import { buildNebula } from './nebula.js';
 import { createGestureReplay, readGesture } from './gesture-replay.js';
 import { createLiveNebula } from './live-nebula.js';
 import { createScene } from './scene.js';
+import { createNebulaSpace } from './nebula-space.js';
 import { createTransport } from './transport.js';
 import { createHud } from './hud.js';
 import { exportStill } from './export-still.js';
@@ -36,6 +38,8 @@ let PACKS = [];
 
 const canvas = document.getElementById('c');
 const view = createScene(canvas);
+const space = createNebulaSpace();
+view.scene.add(space.group);
 
 let current = null; // pack mode: { name, pack, layout, disc, transport }
 let live = null;    // record mode: { es, disc, layout, laneOf, maxT, queue, durationMs, ... }
@@ -61,15 +65,13 @@ function rememberArtwork(name = current?.name) {
 const hud = createHud({
   packs: PACKS,
   onPack: (name) => switchPack(name),
-  onPlayPause: () => {
-    if (!current) return;
-    const t = current.transport;
-    t.playing ? t.pause() : t.play();
-  },
-  onSeek: (ms) => { if (current) { current.transport.pause(); current.transport.seek(ms); } },
-  onSpeed: (s) => { playbackSpeed = s; current?.transport.setSpeed(s); },
-  onFinal: () => current?.transport.toEnd(),
-  onRestart: () => current?.transport.restart(),
+  onPlayPause: transportPlayPause,
+  onSeek: transportSeek,
+  onSpeed: transportSpeed,
+  onFinal: () => transportSeek(current?.pack.manifest.durationMs ?? 0),
+  onRestart: transportRestart,
+  onUdpEnable: enableUdpOutput,
+  onUdpDisable: disableUdpOutput,
   onExport: () => {
     if (!current) throw new Error('Önce dışa aktarılacak bir eser açın.');
     return exportStill({
@@ -82,6 +84,7 @@ const hud = createHud({
   },
   onFit: () => view.fit(),
   onTilt: (radians) => view.setTilt(radians),
+  onJourney: () => view.journeyActive ? view.stopJourney() : view.startJourney(),
   onOrbitMotion: (on) => { orbitMotion = on; },
   onFocusMode: (on) => view.setPresentation(on),
   onDeselect: () => (live ? selectLive(null) : select(null)),
@@ -90,6 +93,61 @@ const hud = createHud({
   onDemo: () => switchPack(DEMO_NAME),
   onHome: () => showEntrance(),
 });
+const udpReplay = createUdpReplayClient({ request: recorderFetch, onState: (state) => hud.setUdpState(state) });
+view.onJourneyChange((active) => hud.setJourneyState(active));
+
+// Called by the frame loop before local tick. The server owns the source time
+// whenever UDP is opted in; local playback never races a second clock.
+function syncUdpTransport() {
+  if (!udpReplay.enabled || !current) return false;
+  const state = udpReplay.snapshot();
+  hud.setUdpState(state);
+  current.transport.pause();
+  current.transport.seek(state.positionMs);
+  if (state.playing && state.positionMs < current.pack.manifest.durationMs) current.transport.play();
+  return true;
+}
+async function udpAction(action) {
+  try { await action(); syncUdpTransport(); }
+  catch (error) { current?.transport.pause(); hud.setStats(replayErrorMessage(error)); }
+}
+async function enableUdpOutput() {
+  if (!current || live || recPending) return;
+  current.transport.pause();
+  await udpAction(() => udpReplay.enable({ sessionId: current.pack.manifest.sessionId, durationMs: current.pack.manifest.durationMs,
+    simulated: current.name === DEMO_NAME || current.pack.manifest.simulated === true }));
+  if (udpReplay.enabled) { playbackSpeed = udpReplay.snapshot().status?.speed ?? 1; current.transport.setSpeed(playbackSpeed); }
+}
+async function disableUdpOutput() {
+  const position = current?.transport.time;
+  await udpAction(() => udpReplay.disable());
+  if (!udpReplay.enabled && current) {
+    current.transport.pause(); if (Number.isFinite(position)) current.transport.seek(position);
+    hud.setStats('UDP çıkışı kapalı · Görsel oynatım sessiz.');
+  }
+}
+async function transportPlayPause() {
+  if (!current) return;
+  if (udpReplay.enabled) return udpAction(() => udpReplay.snapshot().status?.state === 'PLAYING' ? udpReplay.pause() : udpReplay.play({ speed: Math.min(4, playbackSpeed) }));
+  current.transport.playing ? current.transport.pause() : current.transport.play();
+}
+async function transportSeek(ms) {
+  if (!current) return;
+  if (udpReplay.enabled) return udpAction(() => udpReplay.seek(ms));
+  current.transport.pause(); current.transport.seek(ms);
+}
+async function transportSpeed(speed) {
+  if (udpReplay.enabled) {
+    await udpAction(() => udpReplay.setSpeed(Math.min(4, speed)));
+    playbackSpeed = udpReplay.snapshot().status?.speed ?? playbackSpeed;
+  } else playbackSpeed = speed;
+  current?.transport.setSpeed(playbackSpeed);
+}
+async function transportRestart() {
+  if (!current) return;
+  if (udpReplay.enabled) return udpAction(() => udpReplay.play({ positionMs: 0, speed: Math.min(4, playbackSpeed) }));
+  current.transport.restart();
+}
 hud.setOrbitMotion(orbitMotion);
 reducedMotion.addEventListener('change', (event) => {
   if (event.matches) { orbitMotion = false; hud.setOrbitMotion(false); }
@@ -276,10 +334,10 @@ function applyLiveSel() {
 
 view.onCanvasClick((x, y) => {
   if (live?.disc) {
-    selectLive(live.disc.inspect(x, y)?.lane ?? null); return;
+    selectLive(live.disc.inspectNdc(x, y)?.lane ?? null); return;
   }
   if (!current) return;
-  const hit = current.disc.inspect(x, y);
+  const hit = current.disc.inspectNdc(x, y);
   select(hit?.lane ?? null);
   current.disc.setInspection?.(hit);
   if (hit) hud.showSeat(hit);
@@ -293,7 +351,7 @@ view.onCanvasClick((x, y) => {
 });
 
 view.onHover((x, y) => {
-  if (!live && current) current.disc.updateHover?.(x, y);
+  if (!live && current) current.disc.updateHoverNdc?.(x, y);
 });
 view.onTilt((tilt) => {
   const disc = live?.disc ?? current?.disc;
@@ -312,7 +370,7 @@ window.addEventListener('keydown', (e) => {
     // stop the one-shot recording. It toggles the transport in pack mode only.
     e.preventDefault();
     if (current && !live) {
-      current.transport.playing ? current.transport.pause() : current.transport.play();
+      transportPlayPause();
     }
   }
   if (e.key === 'f' || e.key === 'F') view.fit();
@@ -324,6 +382,7 @@ function clearStage() {
 
 async function switchPack(name, notice = null) {
   if (live || recPending) return; // recording owns the stage
+  if (udpReplay.enabled || udpReplay.busy) { hud.setStats('Başka bir eseri açmadan önce UDP çıkışını kapatın.'); return; }
   if (!name) { hud.setStats(EMPTY_LIBRARY_MSG); return; }
   const gen = ++switchGen; // any older in-flight load is now void
   packAbort?.abort();
@@ -386,6 +445,7 @@ async function switchPack(name, notice = null) {
 // disposed before the server confirms RECORDING.
 async function startRecording() {
   if (live || recPending) return; // synchronous re-entry guard (double-click)
+  if (udpReplay.enabled || udpReplay.busy) { hud.setStats('Canlı kayıttan önce UDP çıkışını kapatın.'); return; }
   recPending = true;
   ++switchGen; // void any in-flight pack load
   packAbort?.abort();
@@ -732,6 +792,8 @@ function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(100, now - prev);
   prev = now;
+  view.tick(dt);
+  (live?.disc ?? current?.disc)?.setCamera(view.camera, canvas.height);
   const px = view.pixelsPerWorldUnit();
   const devicePx = px * view.renderer.getPixelRatio();
   hud.labelLayer.hidden = true;
@@ -787,7 +849,7 @@ function frame(now) {
 
   if (!current) { renderIfChanged('ambient'); return; }
   const { disc, transport, layout } = current;
-  transport.tick(dt);
+  if (!syncUdpTransport()) transport.tick(dt);
   const movedTime = transport.time !== disc.uniforms.uTime.value;
   if (transport.time < disc.uniforms.uTime.value) {
     // A previously selected late cell must not disclose future counts after

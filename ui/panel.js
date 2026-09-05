@@ -48,14 +48,18 @@ async function request(path, options = {}) {
 function renderControls() {
   const state = status?.state;
   const ready = connected && !pending;
-  $('arm').disabled = !ready || !['IDLE', 'COMPLETE', 'ARMED'].includes(state);
-  $('start').disabled = !ready || state !== 'ARMED';
+  const replay = status?.udpReplay;
+  const udpBusy = replay?.state === 'PLAYING' || replay?.busy || replay?.activeVoices > 0;
+  $('arm').disabled = !ready || udpBusy || !['IDLE', 'COMPLETE', 'ARMED'].includes(state);
+  $('start').disabled = !ready || udpBusy || state !== 'ARMED';
   $('stop').disabled = !ready || state !== 'RECORDING';
+  $('udp-stop').disabled = !ready || !(udpBusy || ['PAUSED', 'ERROR'].includes(replay?.state));
   $('take-label').disabled = !ready || !['IDLE', 'COMPLETE', 'ARMED'].includes(state);
   document.querySelector('.controls').setAttribute('aria-busy', String(Boolean(pending)));
   setText('arm-text', pending === 'arm' ? 'Bekleniyor…' : state === 'ARMED' ? 'DISARM · İptal' : 'ARM · Hazırla');
   setText('start-text', pending === 'start' ? 'Başlatılıyor…' : 'Kaydı başlat');
   setText('stop-text', pending === 'stop' ? 'Durduruluyor…' : 'Durdur');
+  setText('udp-stop', pending === 'udp-stop' ? 'Durduruluyor…' : "■ UDP'yi durdur");
 }
 
 function renderStatus(next) {
@@ -72,6 +76,15 @@ function renderStatus(next) {
   else if (next.state === 'COMPLETE' && next.packName) description = 'Oturum ve görselleştirme paketi hazır. Ham kayıt aşağıdaki arşivde.';
   else if (next.state === 'COMPLETE' && !next.packError) description = 'Oturum kapandı. Ham kayıt arşivde; görsel paket henüz yok.';
   setText('state-description', description);
+  const replay = next.udpReplay;
+  const udpLabels = { EMPTY: 'ÇIKIŞ KAPALI', LOADING: 'YÜKLENİYOR', READY: 'HAZIR · ÇIKIŞ KAPALI', PLAYING: 'UDP GÖNDERİLİYOR', PAUSED: 'DURAKLATILDI', COMPLETE: 'TAMAMLANDI', ERROR: 'ÇIKIŞ HATASI' };
+  setText('udp-state', udpLabels[replay?.state] ?? 'ÇIKIŞ KAPALI');
+  $('udp-state').className = `state ${replay?.state === 'PLAYING' ? 'RECORDING' : ''}`;
+  setText('udp-route', `${replay?.destination?.host ?? '127.0.0.1'}:${replay?.destination?.port ?? 6061}`);
+  setText('udp-summary', replay?.error || (replay?.file
+    ? `${replay.label || replay.file} · ${clock(replay.positionMs)} / ${clock(replay.durationMs)} · ${count(replay.datagramsSent)} UDP paketi · ${count(replay.activeVoices)} replay notası`
+    : 'Kayıtlı bir eserden, görselleştiricideki UDP çıkışı kontrolüyle başlatılır.'));
+  if (replay?.state === 'PLAYING' || replay?.activeVoices > 0) setText('state-description', 'UDP tekrar oynatımı sürüyor. Yeni kayıt için önce UDP çıkışını durdur.');
   const duration = Number.isFinite(next.durationMs) && next.durationMs > 0 ? next.durationMs : 180000;
   const elapsed = Number.isFinite(next.startedAtLocalMs)
     ? Math.max(0, (next.endedAtLocalMs ?? Date.now()) - next.startedAtLocalMs) : 0;
@@ -212,7 +225,7 @@ async function command(action) {
   renderControls();
   $('action-error').hidden = true;
   try {
-    await request(`/api/${action}`, {
+    await request(action === 'udp-stop' ? '/api/replay/stop' : `/api/${action}`, {
       method: 'POST',
       ...(action === 'start' ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: $('take-label').value.trim() }) } : {}),
     });
@@ -232,7 +245,7 @@ $('take-label').addEventListener('input', () => {
   $('take-label').setCustomValidity(/[^\p{L}\p{N} _-]/u.test($('take-label').value)
     ? 'Harf, rakam, boşluk, _ veya - kullanın.' : '');
 });
-for (const action of ['arm', 'start', 'stop']) $(action).addEventListener('click', () => command(action));
+for (const action of ['arm', 'start', 'stop', 'udp-stop']) $(action).addEventListener('click', () => command(action));
 $('dismiss-error').addEventListener('click', () => { $('action-error').hidden = true; });
 $('retry').addEventListener('click', async () => {
   if (pending) return;

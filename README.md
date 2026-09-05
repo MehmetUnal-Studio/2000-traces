@@ -25,6 +25,8 @@ Flow intensity is causal: recent note/move events increase it, silence produces 
 
 ## Record a performance
 
+Saved sessions can also drive the existing local OSC route through explicit UDP replay. See [UDP replay](docs/UDP-REPLAY.md) for the verified message mapping, output controls and cleanup behavior.
+
 Configure `CS_EVENTS_URL` and either `CS_EVENTS_TOKEN` or `CS_EVENTS_AUTH` in your local environment or a gitignored `.env`. Keep credentials on the recording machine. See [the operator guide](docs/OPERATOR.md) for configuration, state transitions, and recovery.
 
 Run these in separate terminals:

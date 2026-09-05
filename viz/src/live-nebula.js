@@ -1,7 +1,7 @@
 // The live take uses the archive's coordinate system and GPU materials.
 // Reservoirs bound display memory; the recorder retains every original event.
 import * as THREE from 'three';
-import { createNebulaUniforms, makePoints, makeFilamentSegments, createNebulaCore,
+import { createNebulaUniforms, makePoints, makeFilamentSegments, createNebulaCore, createNebulaCameraPicker,
   nebulaEventPosition, projectNebulaPoint, lightTemperature, cloudEnvelope, NEBULA_LIMITS, NEBULA_CORE_RADIUS } from './nebula.js';
 import { createLiveFlowEnergy } from './flow-energy.js';
 import { mulberry32 } from './prng.js';
@@ -109,7 +109,12 @@ export function createLiveNebula(layout,{visualSeed=1,limits=NEBULA_LIMITS}={}) 
     }
     return result?{lane:result.lane,gesture:result}:null;
   }
+  const cameraPicker=createNebulaCameraPicker(uniforms,points.mesh.geometry.attributes.position.array,{
+    getCount:()=>points.count,getTime:(index)=>pointRecords[index]?.t??Infinity,object:group,
+    makeHit:(index)=>{const gesture=pointRecords[index];return gesture?{lane:gesture.lane,gesture}:null;},
+  });
   return {group,uniforms,playhead,playheadMat,kind:'nebula',append,inspect,
+    setCamera:cameraPicker.setCamera,inspectNdc:cameraPicker.inspectNdc,
     grainCount:()=>grainCount,
     get stats(){return {points:points.count,halos:halos.count,segments:segments.count,totalSegments};},
     sampleLane(lane,time) {
@@ -121,6 +126,6 @@ export function createLiveNebula(layout,{visualSeed=1,limits=NEBULA_LIMITS}={}) 
       const clock=Math.max(maxT,Math.min(durationMs,time));
       uniforms.uTime.value=clock;uniforms.uActivity.value=flow.sample(clock).energy;
     },
-    dispose(){if(disposed)return;disposed=true;group.traverse(child=>{child.geometry?.dispose();child.material?.dispose();});playheadMat.dispose();lastByLane.clear();selectedByLane.clear();laneWatermark.clear();pointRecords.length=0;},
+    dispose(){if(disposed)return;disposed=true;group.traverse(child=>{child.geometry?.dispose();child.material?.dispose();});playheadMat.dispose();lastByLane.clear();selectedByLane.clear();laneWatermark.clear();pointRecords.length=0;cameraPicker.setCamera(null);},
   };
 }

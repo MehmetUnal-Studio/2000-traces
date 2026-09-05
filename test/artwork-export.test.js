@@ -5,7 +5,7 @@ import { exportStill } from '../viz/src/export-still.js';
 test('print composition uses the final pipeline and restores every interactive uniform on GPU failure', async () => {
   const values = { uDuration: 90000, uTime: 31000, uPointScale: 300, uPointMax: 32,
     uSelLane: 19, uReplaying: 1, uSelRow: 4, uSelColumn: 76, uHoverRow: 5,
-    uHoverColumn: 10, uHoverLane: 7, uTilt: 0.5, uOrbit: 1.3, uAnimation: 13, uActivity: 0.72 };
+    uHoverColumn: 10, uHoverLane: 7, uTilt: 0.5, uOrbit: 1.3, uAnimation: 13, uActivity: 0.72, uViewportHeight: 700 };
   const uniforms = Object.fromEntries(Object.entries(values).map(([key, value]) => [key, { value }]));
   const playheadMat = { opacity: 0.55 };
   const previousTarget = {};
@@ -22,7 +22,11 @@ test('print composition uses the final pipeline and restores every interactive u
       rendered = true;
       assert.equal(target.width, 4);
       assert.equal(target.samples, 0, 'pipeline owns antialiasing');
-      assert.equal(camera.left, -1.12, 'print includes the full engraved outer rim');
+      assert.equal(camera.isPerspectiveCamera, true);
+      assert.equal(camera.zoom, 1);
+      assert.ok(camera.position.z * Math.sin(camera.fov * Math.PI / 360) >= 1.12,
+        'print includes the complete spatial artwork at its standard pose');
+      assert.equal(uniforms.uViewportHeight.value, 4);
       assert.equal(uniforms.uTime.value, 90000);
       assert.equal(uniforms.uAnimation.value, 0);
       assert.equal(uniforms.uActivity.value, 0.35);

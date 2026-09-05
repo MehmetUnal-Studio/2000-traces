@@ -1,8 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildNebula, createNebulaUniforms, createNebulaCore, makePoints, makeFilamentSegments, nebulaEventPosition, projectNebulaPoint, unprojectNebulaPoint, NEBULA_LIMITS, NEBULA_CORE_RADIUS } from '../viz/src/nebula.js';
+import * as THREE from 'three';
+import { buildNebula, createNebulaUniforms, createNebulaCore, createNebulaCameraPicker, makePoints, makeFilamentSegments,
+  nebulaEventPosition, projectNebulaPoint, unprojectNebulaPoint, NEBULA_LIMITS, NEBULA_CORE_RADIUS } from '../viz/src/nebula.js';
 import { readGesture, TYPE } from '../viz/src/gesture-replay.js';
 import { createPackFlowEnergy } from '../viz/src/flow-energy.js';
+import { createNebulaSpace } from '../viz/src/nebula-space.js';
+import { projectLens, lensSourceNdc } from '../viz/src/lensing.js';
 import { createDemoPack } from '../viz/src/demo-pack.js';
 
 function fixture({exact=true}={}) {
@@ -27,6 +31,24 @@ function fixture({exact=true}={}) {
     durationMs:1000,laneCount:3,eventCount:count,strokeCount:0,participants,zones:[{zone:'A',laneStart:0,laneCount:3}],visualSeed:4,
     ...(exact?{gestures:{formatVersion:1,file:'gestures.bin',recordBytes:32,count}}:{}),
   }};
+}
+
+// Locate the outer displayed image using the exact shared inverse lens map.
+// This deliberately does not duplicate the renderer's thin-lens equation.
+function displayedNdc(source,lens,depth=Infinity) {
+  if(!lens.enabled||depth<lens.depth)return {x:source.x,y:source.y};
+  const cx=lens.x*2-1,cy=lens.y*2-1;
+  const dx=(source.x-cx)*lens.aspect,dy=source.y-cy,length=Math.hypot(dx,dy);
+  const ux=length?dx/length:1,uy=length?dy/length:0,target=length*0.5;
+  let lo=lens.radius,hi=target+lens.radius*8;
+  for(let i=0;i<55;i++) {
+    const distance=(lo+hi)*0.5;
+    const sample=lensSourceNdc(cx+ux*distance*2/lens.aspect,cy+uy*distance*2,lens,depth);
+    const mapped=((sample.x-cx)*lens.aspect*ux+(sample.y-cy)*uy)*0.5;
+    if(mapped<target)lo=distance;else hi=distance;
+  }
+  const distance=(lo+hi)*0.5;
+  return {x:cx+ux*distance*2/lens.aspect,y:cy+uy*distance*2};
 }
 
 test('nebula uses both recorded axes and its CPU view projection has a stable full inverse',()=>{
@@ -171,16 +193,133 @@ test('live material helpers share activity and animation state even before the f
   try {
     assert.equal(uniforms.uHasData.value,0);
     assert.equal(uniforms.uTime.value,0);
-    assert.ok(core.geometry.attributes.position.count>0);
-    for(const object of [points,haze,lines,core]) {
+    assert.equal(core.isGroup,true);
+    const surfaces=core.children;
+    assert.ok(surfaces.length>=3);
+    for(const object of [points,haze,lines,...surfaces]) {
       assert.equal(object.material.uniforms.uActivity,uniforms.uActivity);
       assert.equal(object.material.uniforms.uAnimation,uniforms.uAnimation);
     }
     uniforms.uActivity.value=0.42;uniforms.uAnimation.value=2.5;
-    assert.equal(core.material.uniforms.uActivity.value,0.42);
-    assert.equal(core.material.uniforms.uAnimation.value,2.5);
-    assert.equal(core.material.premultipliedAlpha,true,'thin corona adds emission without masking the dust behind it');
+    const torus=core.getObjectByName('nebula-accretion-torus');
+    assert.equal(torus.material.uniforms.uActivity.value,0.42);
+    assert.equal(torus.material.uniforms.uAnimation.value,2.5);
+    assert.equal(torus.material.premultipliedAlpha,true,'thin corona adds emission without masking the dust behind it');
+    core.traverse((object)=>assert.equal(object.layers.mask,2,'all core surfaces belong to the separate core layer'));
+    const horizon=core.getObjectByName('nebula-event-horizon');
+    assert.equal(horizon.geometry.type,'SphereGeometry');
+    assert.equal(horizon.geometry.parameters.radius,NEBULA_CORE_RADIUS);
+    assert.equal(horizon.material.depthWrite,true);
+    assert.equal(torus.geometry.type,'TorusGeometry');
+    torus.geometry.computeBoundingBox();
+    const thickness=torus.geometry.boundingBox.max.z-torus.geometry.boundingBox.min.z;
+    assert.ok(thickness>0.002&&thickness<0.02,'accretion retains real depth while remaining physically thin');
+    assert.equal(torus.material.depthWrite,true);
   } finally {
-    for(const object of [points,haze,lines,core]) {object.geometry.dispose();object.material.dispose();}
+    for(const object of [points,haze,lines,core]) object.traverse((child)=>{child.geometry?.dispose();child.material?.dispose();});
   }
+});
+
+test('perspective picker keeps real foreground gestures visible and rejects the sphere-occluded rear from every side',()=>{
+  for(const eye of [new THREE.Vector3(0,0,2),new THREE.Vector3(2,0,0),new THREE.Vector3(-1,1,-1),new THREE.Vector3(0.36,0,0)]) {
+    const camera=new THREE.PerspectiveCamera(45,1.6,0.008,80);
+    camera.position.copy(eye);camera.lookAt(0,0,0);camera.updateMatrixWorld();
+    const uniforms=createNebulaUniforms(1000);uniforms.uTime.value=1000;
+    const context={time:1000,durationMs:1000,orbit:0,tilt:0};
+    const foreground=eye.clone().normalize().multiplyScalar(0.25);
+    const background=foreground.clone().negate();
+    const a=unprojectNebulaPoint(foreground,context),b=unprojectNebulaPoint(background,context);
+    const positions=new Float32Array([a.x,a.y,a.z,b.x,b.y,b.z]);
+    const picker=createNebulaCameraPicker(uniforms,positions);
+    picker.setCamera(camera,1200);
+    assert.equal(uniforms.uViewportHeight.value,1200);
+    assert.equal(picker.inspectNdc(0,0),0,'foreground point can cross the horizon silhouette');
+    const rearOnly=createNebulaCameraPicker(uniforms,positions.subarray(3));
+    rearOnly.setCamera(camera,1200);
+    assert.equal(rearOnly.inspectNdc(0,0),null,'rear point is hidden by the physical sphere');
+    assert.equal(picker.inspectNdc(null,null),null);
+  }
+});
+
+test('archive NDC picking follows camera orbit, dolly and pan without changing exact event identity',()=>{
+  const pack=fixture(),nebula=buildNebula(pack);
+  try {
+    const camera=new THREE.PerspectiveCamera(45,1.6,0.008,80);
+    const ray=new THREE.Raycaster(),sphere=new THREE.Sphere(new THREE.Vector3(),NEBULA_CORE_RADIUS),intersection=new THREE.Vector3();
+    let checked=0;
+    for(const eye of [[0,0,2.8],[2.2,0.8,1.4],[-1.8,0.6,-1.8]]) {
+      camera.position.set(...eye);camera.lookAt(0.06,-0.03,0);camera.updateMatrixWorld();nebula.setCamera(camera,1200);
+      for(const index of nebula.sampledIndices) {
+        const gesture=readGesture(pack,index);
+        const source=nebulaEventPosition(gesture,pack.manifest);
+        const p=projectNebulaPoint(source,{time:1000,durationMs:1000,orbit:0,tilt:0});
+        const world=new THREE.Vector3(p.x,p.y,p.z),sourceNdc=world.clone().project(camera);
+        const depth=-world.clone().applyMatrix4(camera.matrixWorldInverse).z;
+        const screen=displayedNdc(sourceNdc,projectLens(camera),depth);
+        if(Math.abs(sourceNdc.x)>1||Math.abs(sourceNdc.y)>1||Math.abs(screen.x)>1||Math.abs(screen.y)>1)continue;
+        ray.setFromCamera(new THREE.Vector2(screen.x,screen.y),camera);
+        const blocked=ray.ray.intersectSphere(sphere,intersection)&&intersection.distanceTo(camera.position)<world.distanceTo(camera.position)-0.001;
+        if(blocked)continue;
+        assert.equal(nebula.inspectNdc(screen.x,screen.y)?.index,index);checked++;
+      }
+    }
+    assert.ok(checked>20);
+  } finally {nebula.dispose();}
+});
+
+test('lensed arcs select their real background source across camera pan and aspect, while direct foreground wins overlap',()=>{
+  for(const aspect of [0.75,1.6,2.4]) for(const pan of [0,0.18]) {
+    const camera=new THREE.PerspectiveCamera(45,aspect,0.008,80);
+    camera.position.set(0.3+pan,0.15,3);camera.lookAt(pan,-0.08,0);camera.updateMatrixWorld();
+    const lens=projectLens(camera);
+    const uniforms=createNebulaUniforms(1000);uniforms.uTime.value=1000;
+    const context={time:1000,durationMs:1000,orbit:0,tilt:0};
+    const sourceWorld=camera.position.clone().multiplyScalar(-0.3);
+    const source=sourceWorld.clone().project(camera);
+    const image=displayedNdc(source,lens);
+    const remapped=lensSourceNdc(image.x,image.y,lens);
+    assert.ok(Math.hypot(remapped.x-source.x,remapped.y-source.y)<1e-10);
+    const angularDistance=Math.hypot(((image.x+1)*0.5-lens.x)*lens.aspect,(image.y+1)*0.5-lens.y);
+    assert.ok(angularDistance>lens.radius,'the visible arc lies outside the horizon silhouette');
+    const local=unprojectNebulaPoint(sourceWorld,context);
+    const sourcePosition=new Float32Array([local.x,local.y,local.z]);
+    const picker=createNebulaCameraPicker(uniforms,sourcePosition,{makeHit:()=>({index:81})});
+    picker.setCamera(camera,1200);
+    assert.equal(picker.inspectNdc(source.x,source.y),null,'straight source ray is hidden');
+    assert.equal(picker.inspectNdc(image.x,image.y)?.index,81,'bent displayed arc resolves to the source event');
+
+    const ray=new THREE.Raycaster();ray.setFromCamera(new THREE.Vector2(image.x,image.y),camera);
+    const foreground=ray.ray.at(camera.position.length()*0.45,new THREE.Vector3());
+    const frontLocal=unprojectNebulaPoint(foreground,context);
+    const positions=new Float32Array([frontLocal.x,frontLocal.y,frontLocal.z,local.x,local.y,local.z]);
+    const both=createNebulaCameraPicker(uniforms,positions);
+    both.setCamera(camera,1200);
+    assert.equal(both.inspectNdc(image.x,image.y),0,'direct foreground remains in front of the lensed background');
+  }
+});
+
+test('decorative space has deterministic noncoplanar depth strata separate from recorded events',()=>{
+  const a=createNebulaSpace({seed:42,starCount:240}),b=createNebulaSpace({seed:42,starCount:240});
+  try {
+    const points=a.group.getObjectByName('decorative-stars-four-depth-strata');
+    const positions=points.geometry.attributes.position.array;
+    assert.deepEqual(positions,b.group.getObjectByName(points.name).geometry.attributes.position.array);
+    let front=0,rear=0;
+    const shells=[[],[],[],[]];
+    for(let i=0;i<positions.length/3;i++) {
+      const x=positions[i*3],y=positions[i*3+1],z=positions[i*3+2];
+      shells[i%4].push(Math.hypot(x,y,z));if(z>0)front++;else rear++;
+    }
+    assert.ok(front>50&&rear>50);
+    for(let layer=1;layer<4;layer++)assert.ok(Math.min(...shells[layer])>Math.max(...shells[layer-1]));
+    a.group.traverse((object)=>{assert.equal(object.layers.mask,1);assert.equal(object.userData.recordedData,false);});
+    assert.equal(points.material.uniforms.uDepthPass,a.uniforms.uDepthPass);
+    const before=positions.slice();
+    const camera=new THREE.PerspectiveCamera(45,1,0.008,80);camera.position.set(0,0,2);camera.lookAt(0,0,0);camera.updateMatrixWorld();
+    const star=new THREE.Vector3(positions[0],positions[1],positions[2]);
+    const initial=star.clone().project(camera);
+    camera.position.x+=0.2;camera.updateMatrixWorld();
+    assert.notEqual(star.clone().project(camera).x,initial.x,'camera translation produces true geometric parallax');
+    assert.deepEqual(positions,before,'background remains fixed in world space');
+  } finally {a.dispose();a.dispose();b.dispose();}
 });
