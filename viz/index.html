@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#050b12">
-  <meta name="description" content="2000 TRACES — Cosmic Symphony. Birlikte üretilen seslerin, hareketlerin ve anların yaşayan atlası.">
+  <meta name="theme-color" content="#080909">
+  <meta name="description" content="2000 TRACES — Cosmic Symphony. Kolektif sesin topografyası. Katılımcı verilerinden üretilen etkileşimli bir sanat eseri.">
   <title>2000 TRACES — Cosmic Symphony</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23050b12'/%3E%3Ccircle cx='32' cy='32' r='19' stroke='%2399c9db' fill='none'/%3E%3Ccircle cx='32' cy='32' r='10' stroke='%2399c9db' fill='none'/%3E%3Ccircle cx='32' cy='32' r='3' fill='%23f4eee6'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/src/styles.css">
 </head>
 <body>
-  <canvas id="c" aria-label="Katılımcıların ses ve hareket izlerinden oluşan etkileşimli evren"></canvas>
+  <canvas id="c" aria-label="Katılımcıların ses ve hareket verilerinden oluşan dairesel sanat eseri"></canvas>
   <noscript>2000 TRACES deneyimini görüntülemek için JavaScript'i etkinleştirin.</noscript>
   <script type="module">
     import('/src/main.js').catch((error) => {
@@ -21,7 +21,7 @@
       brand.className = 'eyebrow';
       brand.textContent = '2000 TRACES · COSMIC SYMPHONY';
       const title = document.createElement('h1');
-      title.textContent = 'Evren henüz açılamadı.';
+      title.textContent = 'Eser henüz açılamadı.';
       const copy = document.createElement('p');
       copy.textContent = 'Görselleştirme başlatılamadı. WebGL destekleyen güncel bir tarayıcıda donanım hızlandırmayı etkinleştirin ve yeniden deneyin.';
       const detail = document.createElement('p');

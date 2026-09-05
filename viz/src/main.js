@@ -1,7 +1,7 @@
 // viz/src/main.js
 import { loadPack, EVENT_RECORD_BYTES, TYPE } from './pack-loader.js';
 import { buildLayout } from './layout.js';
-import { buildDisc } from './disc.js';
+import { buildAtlas } from './atlas.js';
 import { createLiveDisc, rosterLayout } from './live-disc.js';
 import { createScene } from './scene.js';
 import { createTransport } from './transport.js';
@@ -40,8 +40,18 @@ let live = null;    // record mode: { es, disc, layout, laneOf, maxT, queue, dur
 let recPending = false; // set synchronously on KAYIT click, before any await
 let switchGen = 0;      // invalidates in-flight switchPack loads
 let packAbort = null;
-let viewMode = 'galaxy';
+let viewMode = new URLSearchParams(location.search).get('style') === 'ink' ? 'ink' : 'atlas';
 let playbackSpeed = 1;
+
+function rememberArtwork(name = current?.name) {
+  if (!name) return;
+  const url = new URL(location.href);
+  if (name === DEMO_NAME) { url.searchParams.set('demo', '1'); url.searchParams.delete('pack'); }
+  else { url.searchParams.set('pack', name); url.searchParams.delete('demo'); }
+  if (viewMode === 'ink') url.searchParams.set('style', 'ink');
+  else url.searchParams.delete('style');
+  history.replaceState(null, '', url);
+}
 
 const hud = createHud({
   packs: PACKS,
@@ -61,9 +71,13 @@ const hud = createHud({
       renderer: view.renderer, scene: view.scene,
       uniforms: current.disc.uniforms, playheadMat: current.disc.playheadMat,
       sessionId: current.pack.manifest.sessionId,
-    });
+      render: (target, camera) => view.render(target, camera),
+      mode: viewMode,
+    }).finally(() => { lastRenderStamp = null; }); // release print-sized intermediate GPU targets
   },
   onFit: () => view.fit(),
+  onTilt: (radians) => view.setTilt(radians),
+  onFocusMode: (on) => view.setPresentation(on),
   onDeselect: () => (live ? selectLive(null) : select(null)),
   onRecord: () => (live ? stopRecording() : startRecording()),
   onLibrary: () => toggleLibrary(),
@@ -71,8 +85,9 @@ const hud = createHud({
   onViewMode: (mode) => {
     viewMode = mode;
     current?.disc.setViewMode?.(mode);
-    live?.disc?.setViewMode?.(mode);
+    view.setTheme(mode);
     hud.setViewMode(mode);
+    rememberArtwork();
   },
 });
 const syncPacks = (selected) => hud.setPacks(PACKS.map((name) => packEntries.find((p) => p.name === name) ?? name), selected);
@@ -191,6 +206,7 @@ function laneInfo(lane) {
 function select(lane) {
   if (!current) return;
   current.disc.uniforms.uSelLane.value = lane === null ? -1 : lane;
+  current.disc.setInspection?.(null);
   hud.showSeat(lane === null ? null : laneInfo(lane));
 }
 
@@ -214,10 +230,23 @@ function applyLiveSel() {
 }
 
 view.onCanvasClick((x, y) => {
-  const point = unprojectTracePoint(x, y, viewMode === 'record' ? 0 : 1);
-  if (live?.disc) { selectLive(live.layout.pickLane(point.x, point.y)); return; }
+  if (live?.disc) {
+    const point = unprojectTracePoint(x, y, 0);
+    selectLive(live.layout.pickLane(point.x, point.y)); return;
+  }
   if (!current) return;
-  select(current.layout.pickLane(point.x, point.y));
+  const hit = current.disc.inspect(x, y);
+  select(hit?.lane ?? null);
+  current.disc.setInspection?.(hit);
+  if (hit) hud.showSeat(hit);
+});
+
+view.onHover((x, y) => {
+  if (!live && current) current.disc.updateHover?.(x, y);
+});
+view.onTilt((tilt) => {
+  if (current?.disc.uniforms.uTilt) current.disc.uniforms.uTilt.value = tilt;
+  hud.setTilt?.(tilt);
 });
 
 window.addEventListener('keydown', (e) => {
@@ -270,7 +299,7 @@ async function switchPack(name, notice = null) {
   let layout; let disc;
   try {
     layout = buildLayout(pack.manifest);
-    disc = buildDisc(pack, layout);
+    disc = buildAtlas(pack, layout);
   } catch (err) {
     hud.setLoading(false);
     hud.setStats(`Eser oluşturulamadı — ${err.message}`);
@@ -278,10 +307,14 @@ async function switchPack(name, notice = null) {
   }
   clearStage();
   disc.setViewMode?.(viewMode);
+  if (disc.uniforms.uTilt) disc.uniforms.uTilt.value = view.tilt;
+  view.setTheme(viewMode);
+  hud.setViewMode(viewMode);
   const transport = createTransport(pack.manifest.durationMs);
   transport.setSpeed(playbackSpeed);
   view.scene.add(disc.group);
   current = { name, pack, layout, disc, transport };
+  rememberArtwork(name);
   lastRenderStamp = null;
   hud.setPack(name);
   hud.setDuration(pack.manifest.durationMs);
@@ -482,7 +515,9 @@ function ensureLiveDisc(roster, { derived = false } = {}) {
   live.rosterDerived = derived;
   live.replayBuf = derived ? [] : null; // kept so a genuine roster can rebuild
   live.disc = createLiveDisc(layout, { visualSeed: live.visualSeed ?? 1 });
-  live.disc.setViewMode?.(viewMode);
+  live.disc.setViewMode?.('record');
+  view.setTheme('atlas');
+  hud.setViewMode('record');
   hud.setArtwork({ laneCount: roster.length, eventCount: 0, durationMs: live.durationMs, label: 'Canlı kayıt' });
   view.scene.add(live.disc.group);
   applyLiveSel(); // a (z,s) isolation must survive the disc (re)build
@@ -610,6 +645,8 @@ function stopLiveUi(err) {
   if (live?.sel) hud.showSeat(null); // a live isolation panel must not linger
   live = null;
   hud.setLiveMode(false);
+  view.setTheme(viewMode);
+  hud.setViewMode(viewMode);
   hud.setRecState('● KAYIT', false);
   if (!current) hud.setEmpty();
   if (err) hud.setStats(err);
@@ -630,10 +667,10 @@ let lastMetrics = 0;
 let lastRenderStamp = null;
 function renderIfChanged(contentStamp) {
   const c = view.camera;
-  const stamp = `${contentStamp}|${c.position.x}|${c.position.y}|${c.zoom}|${canvas.width}|${canvas.height}|${viewMode}`;
+  const stamp = `${contentStamp}|${c.position.x}|${c.position.y}|${c.zoom}|${canvas.width}|${canvas.height}|${viewMode}|${view.revision}`;
   if (stamp === lastRenderStamp) return;
   lastRenderStamp = stamp;
-  view.renderer.render(view.scene, c);
+  view.render();
 }
 function frame(now) {
   requestAnimationFrame(frame);
@@ -641,7 +678,7 @@ function frame(now) {
   prev = now;
   const px = view.pixelsPerWorldUnit();
   const devicePx = px * view.renderer.getPixelRatio();
-  hud.labelLayer.hidden = viewMode === 'galaxy' || (!live?.disc && !current);
+  hud.labelLayer.hidden = !live?.disc;
 
   if (live?.disc) {
     const d = live.disc;
@@ -682,7 +719,7 @@ function frame(now) {
         true,
       );
     }
-    if (viewMode === 'record') updateZoneLabels(hud.labelLayer, live.layout, projectToScreen, px);
+    updateZoneLabels(hud.labelLayer, live.layout, projectToScreen, px);
     renderIfChanged(`live:${d.group.uuid}:${live.maxT}:${d.grainCount()}:${d.uniforms.uSelLane.value}`);
     return;
   }
@@ -690,6 +727,12 @@ function frame(now) {
   if (!current) { renderIfChanged('ambient'); return; }
   const { disc, transport, layout } = current;
   transport.tick(dt);
+  if (transport.time < disc.uniforms.uTime.value) {
+    // A previously selected late cell must not disclose future counts after
+    // seeking or restarting. Includes keyboard playback from the final state.
+    select(null);
+    disc.updateHover?.(null, null);
+  }
   disc.uniforms.uTime.value = transport.time;
   disc.uniforms.uPointScale.value = devicePx;
 
@@ -699,8 +742,7 @@ function frame(now) {
   disc.updatePlayhead?.(transport.time);
 
   hud.setTime(transport.time, transport.playing);
-  if (viewMode === 'record') updateZoneLabels(hud.labelLayer, layout, projectToScreen, px);
-  renderIfChanged(`${disc.group.uuid}:${transport.time}:${disc.uniforms.uSelLane.value}`);
+  renderIfChanged(`${disc.group.uuid}:${transport.time}:${disc.uniforms.uSelLane.value}:${disc.uniforms.uSelRow?.value}:${disc.uniforms.uSelColumn?.value}:${disc.hoverStamp ?? ''}`);
 }
 
 // Boot: if the recorder is already mid-take, auto-attach through the exact
@@ -711,6 +753,8 @@ async function boot() {
   PACKS = await fetchPacks();
   syncPacks();
   if (new URLSearchParams(location.search).get('demo') === '1') { await switchPack(DEMO_NAME); return; }
+  const requestedPack = new URLSearchParams(location.search).get('pack');
+  if (requestedPack) { await switchPack(requestedPack); return; }
   try {
     const r = await recorderFetch(`/api/status`, { signal: AbortSignal.timeout(3000) });
     if (r.ok) {

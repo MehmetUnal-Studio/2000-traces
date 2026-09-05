@@ -1,13 +1,15 @@
 // viz/src/export-still.js
 // Renders the finished artwork (full disc, uTime = duration) into an offscreen
-// 4096x4096 target and hands the viewer a PNG — print/archive quality.
+// 4096x4096 target and hands the viewer a PNG preview URL. The caller owns
+// that URL and revokes it when the preview closes or is replaced.
 import * as THREE from 'three';
 
-export async function exportStill({ renderer, scene, uniforms, playheadMat = null, sessionId, size = 4096 }) {
-  const camera = new THREE.OrthographicCamera(-1.02, 1.02, 1.02, -1.02, -10, 10);
+export async function exportStill({ renderer, scene, uniforms, playheadMat = null, sessionId, size = 4096, render, mode = 'atlas' }) {
+  const extent = 1.12;
+  const camera = new THREE.OrthographicCamera(-extent, extent, extent, -extent, -10, 10);
   camera.position.z = 1;
 
-  const target = new THREE.WebGLRenderTarget(size, size, { samples: 4 });
+  const target = new THREE.WebGLRenderTarget(size, size, { samples: render ? 0 : 4 });
   const prevTime = uniforms.uTime.value;
   const prevScale = uniforms.uPointScale.value;
   const prevSel = uniforms.uSelLane.value;
@@ -15,19 +17,24 @@ export async function exportStill({ renderer, scene, uniforms, playheadMat = nul
   const prevMax = uniforms.uPointMax.value;
   const prevPlayhead = playheadMat ? playheadMat.opacity : 0;
   const prevTarget = renderer.getRenderTarget();
+  const inspection = ['uSelRow', 'uSelColumn', 'uHoverRow', 'uHoverColumn', 'uHoverLane']
+    .filter((key) => uniforms[key]).map((key) => [key, uniforms[key].value]);
+  for (const [key] of inspection) uniforms[key].value = -1;
+  const prevTilt = uniforms.uTilt?.value;
+  if (uniforms.uTilt) uniforms.uTilt.value = 0;
   uniforms.uTime.value = uniforms.uDuration.value;
-  uniforms.uPointScale.value = size / 2.04;
+  uniforms.uPointScale.value = size / (extent * 2);
   uniforms.uSelLane.value = -1;
   // finished-state render: no fresh-glow wedge, no playhead ray in the archive
   uniforms.uReplaying.value = 0;
   // Preserve the current renderer's luminous-core proportions at print size.
-  uniforms.uPointMax.value = Math.max(prevMax, prevMax * (size / 2.04) / Math.max(1, prevScale));
+  uniforms.uPointMax.value = Math.max(prevMax, prevMax * uniforms.uPointScale.value / Math.max(1, prevScale));
   if (playheadMat) playheadMat.opacity = 0;
 
   const pixels = new Uint8Array(size * size * 4);
   try {
-    renderer.setRenderTarget(target);
-    renderer.render(scene, camera);
+    if (render) render(target, camera);
+    else { renderer.setRenderTarget(target); renderer.render(scene, camera); }
     renderer.readRenderTargetPixels(target, 0, 0, size, size, pixels);
   } finally {
     // a throw (e.g. context loss allocating the 4096² MSAA target) must never
@@ -39,6 +46,8 @@ export async function exportStill({ renderer, scene, uniforms, playheadMat = nul
     uniforms.uSelLane.value = prevSel;
     uniforms.uReplaying.value = prevReplaying;
     uniforms.uPointMax.value = prevMax;
+    for (const [key, value] of inspection) uniforms[key].value = value;
+    if (uniforms.uTilt) uniforms.uTilt.value = prevTilt;
     if (playheadMat) playheadMat.opacity = prevPlayhead;
   }
 
@@ -56,10 +65,8 @@ export async function exportStill({ renderer, scene, uniforms, playheadMat = nul
   const blob = await new Promise((resolve, reject) => canvas.toBlob(
     (value) => value ? resolve(value) : reject(new Error('PNG oluşturulamadı. Yeniden deneyin.')), 'image/png',
   ));
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `2000-traces-${sessionId}-${size}px.png`;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-  return { width: size, height: size, bytes: blob.size };
+  return {
+    width: size, height: size, bytes: blob.size, url: URL.createObjectURL(blob),
+    filename: `2000-traces-${sessionId}-${mode}-${size}px.png`,
+  };
 }

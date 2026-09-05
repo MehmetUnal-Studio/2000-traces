@@ -17,6 +17,7 @@ const icons = {
   export: '<path d="M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5"/>',
   arrow: '<path d="M4 12h15m-5-5 5 5-5 5"/>',
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v.1"/>',
 };
 const icon = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[name]}</svg>`;
 const editableTarget = (target) => target instanceof Element && !!target.closest('input, textarea, select, [contenteditable="true"]');
@@ -42,51 +43,66 @@ function seatContent(markup) {
   return frag;
 }
 
-export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, onFinal, onRestart, onExport, onFit, onDeselect, onRecord, onLibrary, onDemo, onViewMode } = {}) {
+export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, onFinal, onRestart, onExport, onFit, onDeselect, onRecord, onLibrary, onDemo, onViewMode, onTilt, onFocusMode } = {}) {
   const el = document.createElement('div');
   el.id = 'hud';
-  el.dataset.view = 'galaxy';
+  el.dataset.view = 'atlas';
+  document.body.dataset.theme = 'atlas';
   el.innerHTML = `
     <header class="panel top">
       <div class="identity" aria-label="2000 TRACES, Cosmic Symphony">
-        <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 42 42" fill="none"><circle cx="21" cy="21" r="17" stroke="currentColor" stroke-width=".6" opacity=".45"/><ellipse cx="21" cy="21" rx="10" ry="17" transform="rotate(38 21 21)" stroke="currentColor" stroke-width=".65"/><ellipse cx="21" cy="21" rx="10" ry="17" transform="rotate(-38 21 21)" stroke="currentColor" stroke-width=".65" opacity=".65"/><circle cx="21" cy="21" r="2" fill="#f0e5d5"/><circle cx="35" cy="11" r="1.5" fill="currentColor"/></svg></div>
-        <div><div class="brand">2000 TRACES</div><div class="brand-sub">COSMIC SYMPHONY</div></div>
+        <div class="brand"><span class="brand-number">2000</span><span class="brand-name">TRACES</span></div>
+        <div class="brand-sub">COSMIC<br>SYMPHONY</div>
       </div>
+      <div class="exhibition-label"><span class="exhibition-index">[ 01 — ∞ ]</span><span>KOLEKTİF SESİN TOPOGRAFYASI</span></div>
       <div class="top-actions">
-        <div class="connection" id="connection" data-state="offline"><span class="status-dot"></span><span id="connectionLabel">ARŞİV GÖRÜNÜMÜ</span></div>
-        <div class="view-switch" role="group" aria-label="Görselleştirme biçimi"><button id="galaxyView" aria-pressed="true">Evren</button><button id="recordView" aria-pressed="false">Plak</button></div>
-        <button id="libBtn" class="library-toggle" aria-controls="libPanel" aria-expanded="false" aria-label="Kayıt kütüphanesini aç">${icon('library')}<span class="button-label">Kütüphane</span></button>
+        <div class="view-switch" role="group" aria-label="Görselleştirme biçimi"><button id="galaxyView" aria-pressed="true">Atlas</button><button id="recordView" aria-pressed="false">Mürekkep</button></div>
+        <button id="libBtn" class="library-toggle" aria-controls="libPanel" aria-expanded="false" aria-label="Kayıt kütüphanesini aç">${icon('library')}<span class="button-label">Arşiv</span></button>
         <button id="focus" class="focus-button" aria-label="Sahne moduna geç, arayüzü gizle" title="Sahne modu · H">${icon('focus')}</button>
       </div>
     </header>
-    <section class="intro" aria-labelledby="artworkTitle">
-      <p class="eyebrow">Kolektif bir ses atlası</p>
-      <h1 id="artworkTitle">Birlikte,<br><span>iz bırakırız.</span></h1>
-      <p class="intro-copy">Her hareket bir titreşim.<br>Her ses, ortak bir evrenin parçası.<br>Bir anın, binlerce farklı izi.</p>
-      <div class="metrics" aria-label="Görüntülenen eserin verileri"><div class="metric"><span id="participants" class="metric-number">—</span><span class="metric-label">Katılımcı</span></div><div class="metric"><span id="events" class="metric-number">—</span><span class="metric-label">Etkileşim</span></div></div>
-      <button id="demo" class="demo-action">Örnek evreni keşfet ${icon('arrow')}</button>
-    </section>
+    <h1 id="artworkTitle" class="sr-only">2000 TRACES — Kolektif sesin topografyası</h1>
+    <div class="edge-caption" aria-hidden="true">SES / HAREKET / ZAMAN</div>
+    <div class="connection" id="connection" data-state="offline"><span class="status-dot"></span><span id="connectionLabel">ARŞİV GÖRÜNÜMÜ</span></div>
     <div id="stats" role="status" aria-live="polite" aria-atomic="true"></div>
-    <div class="work-note"><div class="work-kicker" id="workKicker">Kolektif arşiv</div><div class="work-name" id="workName">Henüz bir kayıt seçilmedi</div><div class="work-format" id="workFormat">Ses · hareket · zaman</div></div>
-    <div class="stage-caption"><i aria-hidden="true"></i><span id="stageCaption">HER İZ BİR AN.<br>HER AN BİRLİKTE.</span></div>
+    <section class="work-note" aria-label="Görüntülenen eser">
+      <div class="work-kicker" id="workKicker">Kolektif arşiv</div>
+      <div class="work-name" id="workName">Henüz bir kayıt seçilmedi</div>
+      <div class="work-format" id="workFormat">Ses · hareket · zaman</div>
+      <div class="metrics" aria-label="Eserin verileri"><div class="metric"><span id="participants" class="metric-number">—</span><span class="metric-label">katılımcı</span></div><div class="metric"><span id="events" class="metric-number">—</span><span class="metric-label">etkileşim</span></div></div>
+      <button id="demo" class="demo-action">Örnek eseri aç ${icon('arrow')}</button>
+    </section>
+    <div class="reading-control"><button id="readArtwork" aria-expanded="false" aria-controls="legendPanel">${icon('info')}<span>Eseri oku</span></button></div>
+    <aside id="legendPanel" class="legend-panel" aria-labelledby="legendTitle" hidden>
+      <div class="legend-head"><h2 id="legendTitle">Eseri okumak</h2><button id="closeLegend" aria-label="Eser açıklamasını kapat">${icon('close')}</button></div>
+      <p class="legend-intro">Tek bir kayıt. İç içe geçen binlerce iz.</p>
+      <dl><div><dt>Yarıçap</dt><dd>Katılımcı grupları</dd></div><div><dt>Hücre açısı</dt><dd>Kayıt boyunca akan zaman</dd></div><div><dt>Bağlantılar</dt><dd>Bir katılımcının ardışık notaları</dd></div><div><dt>Dış çeper</dt><dd>Katılımcı sırası · bireysel aktivite</dd></div></dl>
+      <div class="legend-tilt" id="legendTiltRow"><label for="tilt">Kabartı / eğim</label><output id="tiltValue" for="tilt" aria-hidden="true">0°</output><input id="tilt" type="range" min="-35" max="35" step="1" value="0" aria-valuetext="0 derece"><span>Kabartıyı farklı açılardan inceleyin.</span></div>
+      <p class="legend-foot">Bir ize dokunarak katılımcıyı seçin.<br>Sürükleyin, yakınlaşın, ayrıntıları keşfedin.<br><span class="desktop-help">Shift + sürükle · eğ / F · görünümü sıfırla</span></p>
+    </aside>
     <div id="loading" class="loading-indicator" role="status" hidden><span class="spinner" aria-hidden="true"></span><span id="loadingLabel">Eser yükleniyor</span></div>
     <section class="panel library" id="libPanel" aria-labelledby="libraryTitle" hidden>
       <div class="drawer-top"><div><div class="drawer-eyebrow">KOLEKTİF ARŞİV</div><h2 class="drawer-title" id="libraryTitle">Kütüphane</h2></div><button id="closeLibrary" aria-label="Kütüphaneyi kapat">${icon('close')}</button></div>
-      <label class="search-wrap">${icon('search')}<span class="sr-only">Kayıtlarda ara</span><input id="librarySearch" type="search" placeholder="Bir anı, bir kayıt ara…" autocomplete="off"></label>
+      <label class="search-wrap">${icon('search')}<span class="sr-only">Kayıtlarda ara</span><input id="librarySearch" type="search" placeholder="Kayıt adıyla ara…" autocomplete="off"></label>
       <label class="sr-only" for="pack">Arşivden eser seç</label><select id="pack" class="sr-only" tabindex="-1" aria-hidden="true"></select>
       <div id="libBody" aria-live="polite"><div class="lib-empty">Kütüphane yükleniyor…</div></div>
       <div class="library-foot">Bir kaydı açarak bıraktığı izleri yeniden keşfedin.</div>
     </section>
-    <aside class="panel seat" id="seatPanel" aria-label="Seçilen katılımcı" hidden>
-      <div class="seat-head"><div><div class="drawer-eyebrow">BİR İZİN HİKÂYESİ</div><div class="pid" id="selPid"></div></div><button id="deselect" aria-label="Katılımcı seçimini kapat" title="Seçimi kaldır · Esc">${icon('close')}</button></div><div id="selMeta" class="seat-meta"></div>
+    <aside class="panel seat" id="seatPanel" aria-label="Seçilen veri" hidden>
+      <div class="seat-head"><div><div class="drawer-eyebrow">SEÇİLİ VERİ</div><div class="pid" id="selPid"></div></div><button id="deselect" aria-label="Veri seçimini kapat" title="Seçimi kaldır · Esc">${icon('close')}</button></div><div id="selMeta" class="seat-meta"></div>
     </aside>
     <nav class="panel transport" aria-label="Eser oynatma denetimleri">
       <div class="record-control"><button id="rec" class="rec" title="Canlı akıştan 90 saniye kaydet" aria-label="Canlı kayıt başlat"><span class="record-dot" aria-hidden="true"></span><span class="rec-label" id="recLabel">Canlı kayıt</span></button></div>
       <div class="transport-center"><button id="play" class="play" aria-label="Oynat" title="Oynat / duraklat · Boşluk">${icon('play')}</button><button id="restart" class="transport-icon" aria-label="Baştan oynat" title="Baştan oynat">${icon('restart')}</button><div class="timeline"><span id="clock" class="clock" aria-hidden="true">00:00</span><label for="scrub" class="sr-only">Oynatma konumu</label><input id="scrub" type="range" min="0" max="90000" value="0" step="50" aria-valuetext="00:00"><span id="duration" class="clock duration" aria-hidden="true">01:30</span></div><label class="sr-only" for="speed">Oynatma hızı</label><select id="speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option></select></div>
-      <div class="transport-tools"><button id="final" class="transport-icon" aria-label="Eserin tamamını göster" title="Son hâl">${icon('final')}</button><button id="fit" class="transport-icon" aria-label="Eseri ekrana sığdır" title="Ekrana sığdır · F">${icon('fit')}</button><button id="export" class="export-button" aria-label="Eseri 4K PNG olarak indir" title="4096 × 4096 PNG">${icon('export')}<span id="exportLabel">Görseli kaydet</span><span class="export-tag">4K</span></button></div>
+      <div class="transport-tools"><button id="final" class="transport-icon" aria-label="Eserin tamamını göster" title="Son hâl">${icon('final')}</button><button id="fit" class="transport-icon" aria-label="Eseri ekrana sığdır" title="Ekrana sığdır · F">${icon('fit')}</button><button id="export" class="export-button" aria-label="4K eser önizlemesini hazırla" title="4096 × 4096 PNG">${icon('export')}<span id="exportLabel">Görseli kaydet</span><span class="export-tag">4K</span></button></div>
     </nav>
-    <footer class="footer"><div class="footer-help">Sürükle, keşfet <span aria-hidden="true">·</span> Bir ize dokun<span class="desktop-help"> <span aria-hidden="true">·</span> Yakınlaş: tekerlek <span aria-hidden="true">·</span> Sahne: H</span></div><div class="footer-right">THE ART OF TOGETHERNESS</div></footer>
+    <footer class="footer"><div class="footer-help">Sürükle, keşfet <span aria-hidden="true">·</span> Bir ize dokun<span class="desktop-help"> <span aria-hidden="true">·</span> Yakınlaş: tekerlek <span aria-hidden="true">·</span> Sahne: H</span></div><div class="footer-right">COSMIC SYMPHONY / DATA ART</div></footer>
     <button id="focusReturn" class="focus-return" hidden>${icon('focus')}<span>Arayüzü göster</span><span class="desktop-help"> · H</span></button>
+    <dialog id="exportPreview" class="export-preview" aria-labelledby="exportPreviewTitle" aria-describedby="exportPreviewMeta">
+      <header class="export-preview-head"><div><div class="drawer-eyebrow">2000 TRACES / BASKI</div><h2 id="exportPreviewTitle">Eserin son hâli</h2></div><button id="closeExportPreview" aria-label="Eser önizlemesini kapat" autofocus>${icon('close')}</button></header>
+      <div class="export-preview-art"><img id="exportPreviewImage" alt="4K eser önizlemesi"></div>
+      <footer class="export-preview-foot"><div><p id="exportPreviewMeta"></p><p class="export-preview-note">Tam kayıt · düz görünüm · seçim vurgusu içermez</p></div><a id="exportDownload" class="export-download">${icon('export')}<span>PNG'yi indir</span></a></footer>
+    </dialog>
     <div id="announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
   `;
   document.body.appendChild(el);
@@ -97,6 +113,8 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
   let loading = false;
   let focused = false;
   let exportPending = false;
+  let previewUrl = null;
+  let previewReturnFocus = null;
   let lastTime = null;
   let lastClock = null;
   let lastPlaying = null;
@@ -124,6 +142,7 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
     $('demo').disabled = liveMode || loading;
     $('galaxyView').disabled = liveMode;
     $('recordView').disabled = liveMode;
+    $('tilt').disabled = liveMode;
   };
   const setStats = (value) => {
     const text = String(value ?? '');
@@ -141,19 +160,55 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
     $('export').setAttribute('aria-busy', String(exportPending));
     syncDisabled();
     if (message) setStats(message);
-    else if (state === 'success') announce('4K görsel hazır. İndirme başlatıldı.');
+    else if (state === 'success') announce('4K görsel hazır. Önizlemeden PNG dosyasını indirebilirsiniz.');
     else if (state === 'error') setStats('Görsel kaydedilemedi. Lütfen yeniden deneyin.');
   };
+  const closeExportPreview = (restoreFocus = true) => {
+    if ($('exportPreview').open) $('exportPreview').close();
+    $('exportPreviewImage').removeAttribute('src');
+    $('exportDownload').removeAttribute('href');
+    $('exportDownload').removeAttribute('download');
+    if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = null; }
+    if (restoreFocus) {
+      const target = focused ? $('focusReturn') : previewReturnFocus?.isConnected ? previewReturnFocus : $('export');
+      target.focus({ preventScroll: true });
+    }
+    previewReturnFocus = null;
+  };
+  const openExportPreview = async (result, theme) => {
+    if (!result || typeof result.url !== 'string' || !result.url.startsWith('blob:')) throw new Error('Önizleme dosyası oluşturulamadı.');
+    closeExportPreview(false);
+    previewUrl = result.url;
+    previewReturnFocus = $('export');
+    const expectedUrl = previewUrl;
+    $('exportPreview').dataset.theme = theme === 'ink' ? 'ink' : 'atlas';
+    $('exportPreviewImage').src = previewUrl;
+    $('exportDownload').href = previewUrl;
+    $('exportDownload').download = result.filename || '2000-traces-4096px.png';
+    const megabytes = (Number(result.bytes || 0) / 1048576).toLocaleString('tr-TR', { maximumFractionDigits: 1 });
+    write('exportPreviewMeta', `${result.width} × ${result.height} px · PNG · ${megabytes} MB`);
+    try {
+      await $('exportPreviewImage').decode();
+      if (previewUrl !== expectedUrl) return;
+      $('exportPreview').showModal();
+      $('closeExportPreview').focus({ preventScroll: true });
+    } catch (error) { if (previewUrl === expectedUrl) closeExportPreview(false); throw error; }
+  };
+  $('exportPreview').addEventListener('cancel', (event) => { event.preventDefault(); closeExportPreview(); });
+  window.addEventListener('pagehide', () => closeExportPreview(false));
   const setFocusMode = (on) => {
+    const changed = focused !== !!on;
+    if ($('exportPreview').open) closeExportPreview(false);
     focused = !!on;
-    if (focused) setLibraryOpen(false);
+    if (focused) { setLibraryOpen(false); setLegendOpen(false); }
     el.classList.toggle('focus-mode', focused);
     $('focusReturn').hidden = !focused;
     if (focused) $('focusReturn').focus({ preventScroll: true });
     else $('focus').focus({ preventScroll: true });
+    if (changed) run(onFocusMode, focused);
   };
   const setLibraryOpen = (on) => {
-    if (on) libraryReturnFocus = document.activeElement;
+    if (on) { libraryReturnFocus = document.activeElement; setLegendOpen(false); }
     $('libPanel').hidden = !on;
     el.classList.toggle('library-open', !!on);
     $('libBtn').setAttribute('aria-expanded', String(!!on));
@@ -163,19 +218,37 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
       (libraryReturnFocus instanceof HTMLElement && libraryReturnFocus !== document.body ? libraryReturnFocus : $('libBtn')).focus({ preventScroll: true });
     }
   };
+  const setLegendOpen = (on) => {
+    $('legendPanel').hidden = !on;
+    el.classList.toggle('legend-open', !!on);
+    $('readArtwork').setAttribute('aria-expanded', String(!!on));
+    if (on) setLibraryOpen(false);
+    else if ($('legendPanel').contains(document.activeElement)) $('readArtwork').focus({ preventScroll: true });
+  };
   $('pack').onchange = (event) => { if (event.isTrusted) event.target.blur(); run(onPack, event.target.value); };
   click('play', onPlayPause); click('restart', onRestart); click('final', onFinal); click('fit', onFit);
   click('deselect', onDeselect); click('rec', onRecord); click('libBtn', onLibrary || (() => setLibraryOpen($('libPanel').hidden)));
   click('closeLibrary', () => setLibraryOpen(false));
+  click('closeExportPreview', () => closeExportPreview());
   click('demo', onDemo);
-  click('galaxyView', () => onViewMode?.('galaxy')); click('recordView', () => onViewMode?.('record'));
+  click('galaxyView', () => onViewMode?.('atlas')); click('recordView', () => onViewMode?.('ink'));
+  click('readArtwork', () => setLegendOpen($('legendPanel').hidden));
+  click('closeLegend', () => setLegendOpen(false));
   click('focus', () => setFocusMode(true)); click('focusReturn', () => setFocusMode(false));
+  $('legendTiltRow').hidden = !onTilt;
+  $('tilt').oninput = (event) => {
+    const degrees = Number(event.target.value);
+    write('tiltValue', `${degrees}°`);
+    $('tilt').setAttribute('aria-valuetext', `${degrees} derece`);
+    run(onTilt, degrees * Math.PI / 180);
+  };
   $('scrub').oninput = (event) => run(onSeek, Number(event.target.value));
   $('speed').onchange = (event) => run(onSpeed, Number(event.target.value));
   click('export', async () => {
     if (exportPending || liveMode || !hasArtwork || !onExport) return;
+    const previewTheme = document.body.dataset.theme;
     setExportState('pending');
-    try { await onExport(); setExportState('success'); }
+    try { const result = await onExport(); await openExportPreview(result, previewTheme); setExportState('success'); }
     catch (error) { setExportState('error', `Görsel kaydedilemedi: ${error?.message ?? error}`); }
   });
   $('demo').hidden = !onDemo;
@@ -183,6 +256,11 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
   $('recordView').hidden = !onViewMode;
 
   window.addEventListener('keydown', (event) => {
+    if ($('exportPreview').open) {
+      if (event.key === 'Escape') { event.preventDefault(); closeExportPreview(); }
+      event.stopImmediatePropagation();
+      return;
+    }
     if (editableTarget(event.target)) {
       if (event.key === 'Escape' && !$('libPanel').hidden) { event.preventDefault(); setLibraryOpen(false); }
       return;
@@ -192,6 +270,7 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
     if (event.key === 'Escape') {
       if (focused) setFocusMode(false);
       if (!$('libPanel').hidden) setLibraryOpen(false);
+      if (!$('legendPanel').hidden) setLegendOpen(false);
     }
   });
   const labelLayer = document.createElement('div');
@@ -208,13 +287,13 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
     if (!options.length) { const option = document.createElement('option'); option.value = ''; option.textContent = 'Henüz kayıt yok'; option.disabled = true; options.push(option); }
     $('pack').replaceChildren(...options);
     if (previous === '__demo__') {
-      const option = document.createElement('option'); option.value = '__demo__'; option.textContent = 'Örnek evren · simülasyon'; $('pack').prepend(option);
+      const option = document.createElement('option'); option.value = '__demo__'; option.textContent = 'Örnek eser · simülasyon'; $('pack').prepend(option);
     }
     if ([...$('pack').options].some((option) => option.value === previous)) $('pack').value = previous;
   };
   const setPack = (name) => {
     if (name === '__demo__' && ![...$('pack').options].some((option) => option.value === name)) {
-      const option = document.createElement('option'); option.value = name; option.textContent = 'Örnek evren · simülasyon'; $('pack').prepend(option);
+      const option = document.createElement('option'); option.value = name; option.textContent = 'Örnek eser · simülasyon'; $('pack').prepend(option);
     }
     $('pack').value = name;
   };
@@ -254,7 +333,7 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
       box.append(heading, description); body.append(box);
     };
     if (libraryModel.offline) {
-      empty('Kayıt paneli çevrimdışı.', knownPacks.length ? 'Arşivdeki eserleri keşfedebilirsiniz. Kayıt yönetimi için yerel paneli açın.' : 'Kayıt yönetimi için yerel paneli açın veya örnek evreni keşfedin.');
+      empty('Kayıt paneli çevrimdışı.', knownPacks.length ? 'Arşivdeki eserleri keşfedebilirsiniz. Kayıt yönetimi için yerel paneli açın.' : 'Kayıt yönetimi için yerel paneli açın veya örnek eseri keşfedin.');
       const query = $('librarySearch').value.trim().toLocaleLowerCase('tr-TR');
       const available = knownPacks.filter((pack) => `${pack.label || ''} ${pack.name}`.toLocaleLowerCase('tr-TR').includes(query));
       for (const pack of available) {
@@ -264,7 +343,7 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
         open.setAttribute('aria-label', `${pack.label || pack.name} eserini aç`); row.append(title, open); body.append(row);
       }
       if (query && !available.length) empty('Bu aramada bir iz bulunamadı.', 'Farklı bir kayıt adıyla yeniden deneyin.');
-      if (onDemo) body.append(makeButton('Örnek evreni aç', () => { setLibraryOpen(false); run(onDemo); }));
+      if (onDemo) body.append(makeButton('Örnek eseri aç', () => { setLibraryOpen(false); run(onDemo); }));
       return;
     }
     const query = $('librarySearch').value.trim().toLocaleLowerCase('tr-TR');
@@ -296,7 +375,7 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
       const remove = makeButton('Sil', null, 'danger'); armedDelete(remove, () => libraryHandlers.onDeleteSession?.(session.file), title); remove.disabled = liveMode;
       row(title, `${(Number(session.bytes || 0) / 1048576).toFixed(1)} MB · ${session.complete ? 'Kayıt tamamlandı' : 'Tamamlanmamış kayıt'}`, [process, remove]);
     }
-    if (!packList.length && !sessionList.length) empty(query ? 'Bu aramada bir iz bulunamadı.' : 'İlk iz henüz bırakılmadı.', query ? 'Farklı bir kayıt adıyla yeniden deneyin.' : 'Canlı akıştan bir kayıt oluşturun veya örnek evreni keşfedin.');
+    if (!packList.length && !sessionList.length) empty(query ? 'Bu aramada bir iz bulunamadı.' : 'İlk iz henüz bırakılmadı.', query ? 'Farklı bir kayıt adıyla yeniden deneyin.' : 'Canlı akıştan bir kayıt oluşturun veya örnek eseri keşfedin.');
   };
   $('librarySearch').oninput = drawLibrary;
   setPacks(packs);
@@ -323,7 +402,7 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
       if (!liveMode && !demo && selectedPack && manifest.label) selectedPack.label = manifest.label;
       const simulated = demo || manifest.simulated === true;
       write('participants', number(manifest.laneCount)); write('events', number(manifest.eventCount));
-      write('workKicker', liveMode ? 'Canlı kayıt' : simulated ? 'Örnek veri · simülasyon' : 'Kayıttan bir evren');
+      write('workKicker', liveMode ? 'Canlı kayıt' : simulated ? 'Örnek veri · simülasyon' : 'Kolektif kayıt');
       write('workName', manifest.label || manifest.sessionId || 'İsimsiz kayıt');
       const zones = Array.isArray(manifest.zones) ? ` · ${number(manifest.zones.length)} bölge` : '';
       write('workFormat', `${clock(manifest.durationMs)} süre${zones}${simulated ? ' · canlı veri içermez' : ''}`);
@@ -336,10 +415,22 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
     setConnection,
     setEmpty(message) {
       hasArtwork = false; write('participants', '—'); write('events', '—'); write('workKicker', 'Kolektif arşiv'); write('workName', 'İlk iz için hazır'); write('workFormat', 'Ses · hareket · zaman');
-      $('demo').hidden = !onDemo; setStats(message || 'Arşivden bir eser seçin veya örnek evreni keşfedin.'); setConnection('offline'); syncDisabled();
+      $('demo').hidden = !onDemo; setStats(message || 'Arşivden bir eser seçin veya örnek eseri keşfedin.'); setConnection('offline'); syncDisabled();
     },
-    setViewMode(mode) { el.dataset.view = mode; $('galaxyView').setAttribute('aria-pressed', String(mode === 'galaxy')); $('recordView').setAttribute('aria-pressed', String(mode === 'record')); },
+    setViewMode(mode) {
+      el.dataset.view = mode;
+      document.body.dataset.theme = mode === 'ink' ? 'ink' : 'atlas';
+      $('galaxyView').setAttribute('aria-pressed', String(mode === 'atlas' || mode === 'galaxy'));
+      $('recordView').setAttribute('aria-pressed', String(mode === 'ink'));
+      $('readArtwork').hidden = mode === 'record';
+      if (mode === 'record') setLegendOpen(false);
+    },
     setExportState,
+    setTilt(radians) {
+      const degrees = Math.max(-35, Math.min(35, Math.round((Number(radians) || 0) * 180 / Math.PI)));
+      $('tilt').value = String(degrees); write('tiltValue', `${degrees}°`);
+      $('tilt').setAttribute('aria-valuetext', `${degrees} derece`);
+    },
     setFocusMode,
     setRecState(label, on) {
       const text = !on && /^●?\s*KAYIT$/i.test(label) ? 'Canlı kayıt' : String(label).replace(/^[●■]\s*/, '');
@@ -356,7 +447,7 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
     isLibraryOpen: () => !$('libPanel').hidden,
     setLibraryOpen,
     renderLibrary(model, handlers = {}) { libraryModel = model; libraryHandlers = handlers; drawLibrary(); },
-    showSeat(info) { $('seatPanel').hidden = !info; if (info) { write('selPid', info.title); $('selMeta').replaceChildren(seatContent(info.meta)); } },
+    showSeat(info) { $('seatPanel').hidden = !info; if (info) { setLegendOpen(false); write('selPid', info.title); $('selMeta').replaceChildren(seatContent(info.meta)); } },
     labelLayer,
   };
 }

@@ -1,213 +1,141 @@
-// Orthographic artwork stage. The atmospheric field is decoration and is
-// deliberately separate from the session's event geometry.
+// A quiet, centered gallery stage. Every visible mark belongs to the dataset.
 import * as THREE from 'three';
-import { mulberry32 } from './prng.js';
-
-function createAtmosphere() {
-  const group = new THREE.Group();
-  group.name = 'ambient-starfield';
-  group.userData.decorative = true;
-  const veil = new THREE.Mesh(new THREE.PlaneGeometry(24, 24), new THREE.ShaderMaterial({
-    depthTest: false, depthWrite: false,
-    vertexShader: /* glsl */ `
-      varying vec2 vWorld;
-      void main() {
-        vWorld = position.xy;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      precision highp float;
-      varying vec2 vWorld;
-      void main() {
-        vec2 p = vWorld;
-        float blue = exp(-dot((p - vec2(0.55, -0.45)) * vec2(0.75, 0.5),
-                             (p - vec2(0.55, -0.45)) * vec2(0.75, 0.5)));
-        float fog = exp(-dot((p + vec2(0.8, -0.7)) * vec2(1.0, 0.7),
-                            (p + vec2(0.8, -0.7)) * vec2(1.0, 0.7)));
-        float voidCore = exp(-dot(p, p) * 3.0);
-        vec3 color = vec3(0.006, 0.014, 0.023)
-          + vec3(0.004, 0.013, 0.021) * blue
-          + vec3(0.003, 0.004, 0.009) * fog;
-        color *= 1.0 - voidCore * 0.42;
-        float noise = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 913.713);
-        color += (noise - 0.5) * 0.003;
-        gl_FragColor = vec4(color, 1.0);
-      }
-    `,
-  }));
-  veil.position.z = -4;
-  veil.renderOrder = -1000;
-  group.add(veil);
-
-  const random = mulberry32(20002026);
-  const count = 1700;
-  const positions = new Float32Array(count * 3);
-  const sizes = new Float32Array(count);
-  const colors = new Float32Array(count * 3);
-  for (let i = 0; i < count; i++) {
-    positions[i * 3] = (random() - 0.5) * 7;
-    positions[i * 3 + 1] = (random() - 0.5) * 5;
-    positions[i * 3 + 2] = -3;
-    const brightness = random();
-    sizes[i] = 0.8 + brightness ** 7 * 3.5;
-    const warm = random() > 0.91;
-    colors[i * 3] = warm ? 0.60 : 0.20;
-    colors[i * 3 + 1] = warm ? 0.37 : 0.40;
-    colors[i * 3 + 2] = warm ? 0.22 : 0.60;
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
-  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  const mat = new THREE.ShaderMaterial({
-    transparent: true, depthWrite: false, depthTest: false,
-    blending: THREE.AdditiveBlending, vertexColors: true,
-    uniforms: { uScale: { value: 1 } },
-    vertexShader: /* glsl */ `
-      attribute float aSize;
-      uniform float uScale;
-      varying vec3 vColor;
-      varying float vSize;
-      void main() {
-        vColor = color;
-        vSize = aSize;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = max(1.0, aSize * uScale);
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      precision mediump float;
-      varying vec3 vColor;
-      varying float vSize;
-      void main() {
-        float d = length(gl_PointCoord - 0.5);
-        float alpha = exp(-d * d * 32.0) * (0.24 + vSize * 0.065);
-        gl_FragColor = vec4(vColor, alpha);
-      }
-    `,
-  });
-  const stars = new THREE.Points(geo, mat);
-  stars.renderOrder = -900;
-  // Scale with the actual target, including offscreen PNG exports.
-  const targetSize = new THREE.Vector2();
-  stars.onBeforeRender = (renderer) => {
-    const target = renderer.getRenderTarget();
-    if (target) mat.uniforms.uScale.value = target.height / 900;
-    else { renderer.getDrawingBufferSize(targetSize); mat.uniforms.uScale.value = targetSize.y / 900; }
-  };
-  group.add(stars);
-  return group;
-}
+import { createArtworkPipeline } from './artwork-pipeline.js';
 
 export function createScene(canvas) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  renderer.setClearColor(0x020509, 1);
+  renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
   const scene = new THREE.Scene();
-  const atmosphere = createAtmosphere();
-  scene.add(atmosphere);
+  const pipeline = createArtworkPipeline(renderer);
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -10, 10);
-  camera.position.z = 1;
-
-  let viewH = 600;
-  let viewW = 800;
-  let fitted = true;
-  let disposed = false;
+  camera.position.z = 2;
+  let viewW = 0; let viewH = 0; let fitted = true; let disposed = false;
+  let revision = 0; let tilt = 0; let presentation = false;
+  const clickListeners = new Set();
+  const hoverListeners = new Set();
+  const tiltListeners = new Set();
+  const setTheme = (mode) => {
+    pipeline.setTheme(mode);
+    renderer.setClearColor(mode === 'ink'
+      ? new THREE.Color().setRGB(0.88, 0.855, 0.805)
+      : new THREE.Color().setRGB(0.0015, 0.0022, 0.0030));
+    revision++;
+  };
+  setTheme('atlas');
   const fitCamera = () => {
     const aspect = viewW / viewH;
-    const desktop = viewW >= 1000;
-    camera.zoom = desktop ? Math.min(0.92, aspect * 0.59) : Math.min(0.86, aspect * 0.86);
-    camera.position.set(desktop ? -0.24 * aspect / camera.zoom : 0, 0, 1);
+    const frame = presentation ? 70 : viewW < 700 ? 260 : 190;
+    camera.zoom = Math.max(0.15, Math.min((viewH - frame) / viewH / 1.05, aspect * (presentation ? 0.90 : 0.87)));
+    camera.position.set(0, presentation ? 0 : viewW < 700 ? -0.20 / camera.zoom : -0.018, 2);
     camera.updateProjectionMatrix();
   };
   const resize = () => {
     if (disposed) return;
     const w = canvas.clientWidth || window.innerWidth;
     const h = canvas.clientHeight || window.innerHeight;
-    if (!w || !h) return;
-    if (w === viewW && h === viewH && renderer.domElement.width > 0) return;
+    if (!w || !h || (w === viewW && h === viewH)) return;
     viewW = w; viewH = h;
     renderer.setSize(w, h, false);
     const aspect = w / h;
     camera.left = -aspect; camera.right = aspect; camera.top = 1; camera.bottom = -1;
-    if (fitted) fitCamera();
-    else camera.updateProjectionMatrix();
+    if (fitted) fitCamera(); else camera.updateProjectionMatrix();
+    revision++;
   };
-  // Force the first size initialization, including an actual 800 x 600 pane.
-  viewW = 0;
   resize();
   const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(resize) : null;
   observer?.observe(canvas);
   window.addEventListener('resize', resize);
-
   const worldFromScreen = (clientX, clientY) => {
-    resize();
-    camera.updateMatrixWorld();
+    resize(); camera.updateMatrixWorld();
     const rect = canvas.getBoundingClientRect();
-    const ndcX = ((clientX - rect.left) / (rect.width || viewW || 1)) * 2 - 1;
-    const ndcY = -(((clientY - rect.top) / (rect.height || viewH || 1)) * 2 - 1);
-    return new THREE.Vector3(ndcX, ndcY, 0).unproject(camera);
+    return new THREE.Vector3(
+      ((clientX - rect.left) / (rect.width || viewW || 1)) * 2 - 1,
+      -((clientY - rect.top) / (rect.height || viewH || 1)) * 2 + 1, 0,
+    ).unproject(camera);
   };
-
-  let dragging = false; let moved = 0; let last = null;
-  const clickListeners = new Set();
-  const resetDrag = () => { dragging = false; last = null; canvas.classList.remove('is-dragging'); };
-  const pointerdown = (e) => {
-    if (e.button !== 0) return;
-    dragging = true; moved = 0; last = [e.clientX, e.clientY];
-    canvas.setPointerCapture(e.pointerId);
-  };
-  const pointermove = (e) => {
-    if (!dragging) return;
-    if (e.buttons === 0) { resetDrag(); return; }
-    const dx = e.clientX - last[0]; const dy = e.clientY - last[1];
-    moved += Math.abs(dx) + Math.abs(dy);
-    last = [e.clientX, e.clientY];
-    if (moved > 4) { fitted = false; canvas.classList.add('is-dragging'); }
-    camera.position.x -= (dx / viewH) * 2 / camera.zoom;
-    camera.position.y += (dy / viewH) * 2 / camera.zoom;
-  };
-  const pointerup = (e) => {
-    if (e.button !== 0) return;
-    const wasDragging = dragging;
-    resetDrag();
-    if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
-    if (wasDragging && moved < 5) {
-      const w = worldFromScreen(e.clientX, e.clientY);
-      clickListeners.forEach((fn) => fn(w.x, w.y));
-    }
-  };
-  const wheel = (e) => {
-    e.preventDefault();
-    const before = worldFromScreen(e.clientX, e.clientY);
+  const zoomAt = (factor, x, y) => {
+    const before = worldFromScreen(x, y);
     fitted = false;
-    camera.zoom = Math.min(240, Math.max(0.25, camera.zoom * Math.exp(-e.deltaY * 0.0016)));
+    camera.zoom = Math.min(48, Math.max(0.15, camera.zoom * factor));
     camera.updateProjectionMatrix();
-    const after = worldFromScreen(e.clientX, e.clientY);
+    const after = worldFromScreen(x, y);
     camera.position.x += before.x - after.x;
     camera.position.y += before.y - after.y;
+    revision++;
   };
-  const handlers = { pointerdown, pointermove, pointerup, pointercancel: resetDrag, lostpointercapture: resetDrag, wheel };
+  const setTilt = (value) => {
+    const limit = 35 * Math.PI / 180;
+    tilt = Math.max(-limit, Math.min(limit, value));
+    tiltListeners.forEach((fn) => fn(tilt)); revision++;
+  };
+  const pointers = new Map();
+  let moved = 0; let last = null; let pinching = false;
+  const pair = () => {
+    const [a, b] = [...pointers.values()];
+    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) };
+  };
+  const resetDrag = () => { pointers.clear(); last = null; pinching = false; canvas.classList.remove('is-dragging'); };
+  const pointerdown = (e) => {
+    if (e.button !== 0) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    canvas.setPointerCapture(e.pointerId);
+    if (pointers.size === 1) { moved = 0; last = { x: e.clientX, y: e.clientY }; }
+    else { pinching = true; moved = 10; last = pair(); }
+  };
+  const pointermove = (e) => {
+    if (!pointers.has(e.pointerId)) {
+      const w = worldFromScreen(e.clientX, e.clientY);
+      hoverListeners.forEach((fn) => fn(w.x, w.y)); return;
+    }
+    if (e.pointerType === 'mouse' && e.buttons === 0) { resetDrag(); return; }
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size > 1) {
+      const p = pair();
+      zoomAt(last.d > 1 ? p.d / last.d : 1, p.x, p.y);
+      camera.position.x -= (p.x - last.x) / viewH * 2 / camera.zoom;
+      camera.position.y += (p.y - last.y) / viewH * 2 / camera.zoom;
+      last = p; return;
+    }
+    const dx = e.clientX - last.x; const dy = e.clientY - last.y;
+    moved += Math.abs(dx) + Math.abs(dy); last = { x: e.clientX, y: e.clientY };
+    if (moved > 4) canvas.classList.add('is-dragging');
+    if (e.shiftKey) setTilt(tilt + dy * 0.005);
+    else {
+      fitted = false;
+      camera.position.x -= dx / viewH * 2 / camera.zoom;
+      camera.position.y += dy / viewH * 2 / camera.zoom; revision++;
+    }
+  };
+  const pointerup = (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.delete(e.pointerId);
+    if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+    if (pointers.size) { last = pointers.size > 1 ? pair() : [...pointers.values()][0]; return; }
+    const click = moved < 5 && !pinching;
+    resetDrag();
+    if (click) { const w = worldFromScreen(e.clientX, e.clientY); clickListeners.forEach((fn) => fn(w.x, w.y)); }
+  };
+  const pointerleave = () => { if (!pointers.size) hoverListeners.forEach((fn) => fn(null, null)); };
+  const wheel = (e) => { e.preventDefault(); zoomAt(Math.exp(-e.deltaY * 0.0016), e.clientX, e.clientY); };
+  const handlers = { pointerdown, pointermove, pointerup, pointercancel: resetDrag, pointerleave, wheel };
   for (const [name, handler] of Object.entries(handlers)) canvas.addEventListener(name, handler, name === 'wheel' ? { passive: false } : undefined);
   window.addEventListener('blur', resetDrag);
-  const fit = () => { fitted = true; resize(); fitCamera(); };
-  const dispose = () => {
-    if (disposed) return;
-    disposed = true;
-    observer?.disconnect();
-    window.removeEventListener('resize', resize);
-    window.removeEventListener('blur', resetDrag);
-    for (const [name, handler] of Object.entries(handlers)) canvas.removeEventListener(name, handler);
-    clickListeners.clear();
-    resetDrag();
-    atmosphere.traverse((object) => { object.geometry?.dispose(); object.material?.dispose(); });
-    scene.remove(atmosphere);
-    renderer.dispose();
-  };
+  const fit = () => { fitted = true; resize(); fitCamera(); setTilt(0); revision++; };
   return {
-    renderer, scene, camera, resize, fit, worldFromScreen, dispose,
+    renderer, scene, camera, resize, fit, worldFromScreen, setTheme, setTilt,
+    setPresentation(on) { presentation = !!on; if (fitted) fitCamera(); revision++; },
+    render: (target = null, exportCamera = camera) => pipeline.render(scene, exportCamera, target),
+    get revision() { return revision; }, get tilt() { return tilt; },
     onCanvasClick: (fn) => { clickListeners.add(fn); return () => clickListeners.delete(fn); },
+    onHover: (fn) => { hoverListeners.add(fn); return () => hoverListeners.delete(fn); },
+    onTilt: (fn) => { tiltListeners.add(fn); return () => tiltListeners.delete(fn); },
     pixelsPerWorldUnit: () => (viewH / 2) * camera.zoom,
+    dispose() {
+      if (disposed) return; disposed = true;
+      observer?.disconnect(); window.removeEventListener('resize', resize); window.removeEventListener('blur', resetDrag);
+      for (const [name, handler] of Object.entries(handlers)) canvas.removeEventListener(name, handler);
+      clickListeners.clear(); hoverListeners.clear(); tiltListeners.clear(); resetDrag(); pipeline.dispose(); renderer.dispose();
+    },
   };
 }

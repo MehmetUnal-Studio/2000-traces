@@ -1,8 +1,8 @@
 # 2000 TRACES
 
-A collective memory of a performance. Audience gestures become individual traces in a shared, explorable universe.
+A collective memory of a performance. Audience gestures become a circular, explorable data artwork.
 
-2000 TRACES records a bounded audience-event stream, preserves it as JSONL, and turns each session into a deterministic Three.js artwork. The viewer provides a luminous constellation view and a record-style view, participant isolation, playback, an archive, and 4K PNG export. The separate operator desk keeps recording controls and session health visible.
+2000 TRACES records a bounded audience-event stream, preserves it as JSONL, and turns each session into a deterministic Three.js artwork. The viewer presents a dense circular atlas in luminous and ink editions, with data inspection, participant isolation, playback, an archive, and 4K PNG export. The separate operator desk keeps recording controls and session health visible.
 
 ## Explore locally
 
@@ -13,9 +13,11 @@ npm ci
 npm run viz
 ```
 
-Open [the example universe](http://127.0.0.1:5174/?demo=1). It uses a deterministic, synthetic 90-second session with 2,000 participants; it does not start a recording or write session files. The default viewer opens the example when no saved packs exist.
+Open [the example artwork](http://127.0.0.1:5174/?demo=1). It uses a deterministic, synthetic 90-second session with 2,000 participants; it does not start a recording or write session files. The default viewer opens the example when no saved packs exist.
 
-The visual language uses a near-black field, quiet typography, ice-blue light, and warm amber detail. Participant identity and recorded timing remain attached to the artwork as its presentation changes.
+The artwork combines concentric activity cells, individual participant marks, and a bounded selection of recorded note transitions. Activity controls visual density; musical colors come only from note beginnings, while motion-only activity remains visible in neutral tones. **Atlas** and **Mürekkep** use the same geometry in different palettes. Read [how to explore and interpret the artwork](docs/ARTWORK.md) for the data mapping, controls, and aggregation limits.
+
+The selected pack and style are retained in the page URL, so reloading preserves that choice. Use `?pack=<local-pack-name>&style=ink` for a saved artwork or [the ink example](http://127.0.0.1:5174/?demo=1&style=ink). These URLs refer to files on the same local installation.
 
 ## Record a performance
 
@@ -60,7 +62,8 @@ Completed raw takes appear in `sessions/`; automatic visual packs appear in `viz
 | `src/viz-pack.js`, `src/library.js` | Binary packs, manifest/index generation, inexpensive archive metadata |
 | `ui/` | Recording desk: accessible controls, server status, JSONL archive |
 | `viz/src/main.js`, `viz/src/hud.js` | Viewer coordination, playback, library, live view and interface |
-| `viz/src/` | Three.js rendering, layout, demo generation and pack loading |
+| `viz/src/atlas-data.js`, `viz/src/atlas.js` | Exact event summaries, circular artwork geometry and inspection |
+| `viz/src/` | Three.js rendering, materials, layout, demo generation and pack loading |
 | `test/` | Recorder, transport, server, pack and viewer regression coverage |
 
 The data path is **upstream/file → recorder → JSONL → visual pack → viewer**. During recording, the local server also rebroadcasts compact events to the viewer. Playback and visual exports do not alter the raw take.
@@ -68,6 +71,6 @@ The data path is **upstream/file → recorder → JSONL → visual pack → view
 ## Data and validation
 
 - `.env`, `sessions/`, raw `captures/*.raw`, `viz/public/packs/`, and `dist-viz/` are excluded from Git. Review additions before publishing; ignored local data is still present on disk.
-- Included fixtures and the example universe support offline development. They do not establish venue readiness or prove a real performance capture.
+- Included fixtures and the example artwork support offline development. They do not establish venue readiness or prove a real performance capture.
 - CI runs the Node suite and production build on Node 22 and 24. Browser/GPU appearance and the venue stream still need hands-on acceptance on the target machine.
 - For operating limits and recovery, see [docs/OPERATOR.md](docs/OPERATOR.md). Historical handoff and implementation plans live under `docs/`; the running source defines current behavior.

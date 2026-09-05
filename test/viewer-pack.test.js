@@ -11,7 +11,7 @@ test('exhibition demo is deterministic and has a truthful, self-contained lane t
   assert.deepEqual(a.strokes, b.strokes);
   assert.equal(a.manifest.simulated, true);
   assert.equal(a.manifest.laneCount, 2000);
-  assert.equal(a.manifest.eventCount, 48000);
+  assert.ok(a.manifest.eventCount >= 150000 && a.manifest.eventCount <= 250000, 'rich ensemble study stays within its bounded demo budget');
   validateManifest(a.manifest);
   for (const p of a.manifest.participants) {
     let previous = -1;
