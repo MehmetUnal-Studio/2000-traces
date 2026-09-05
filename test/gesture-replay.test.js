@@ -114,6 +114,23 @@ test('looping restarts at the original timeline and trail sampling remains bound
   for (let i = 0; i < a.pairs.length; i += 2) assert.equal(a.pairs[i + 1] - a.pairs[i], 1, 'retained segments connect actual neighbors');
 });
 
+test('a repeated noteOn starts a new finger trail, including a stable equal-time boundary', () => {
+  const pack = makePack([[
+    { finger: 2, t: 100, x: .1, y: .2, kind: TYPE.noteOn },
+    { finger: 2, t: 200, x: .2, y: .3 },
+    { finger: 2, t: 200, x: .8, y: .7, kind: TYPE.noteOn },
+    { finger: 2, t: 300, x: .9, y: .8 },
+    { finger: 2, t: 400, x: .4, y: .5, kind: TYPE.noteOn },
+  ]]);
+  const replay = createGestureReplay(pack);
+  assert.deepEqual(replay.sampleLane(0, 199).fingers[0].trail.map((p) => p.index), [0]);
+  assert.deepEqual(replay.sampleLane(0, 200).fingers[0].trail.map((p) => p.index), [2]);
+  assert.deepEqual(replay.sampleLane(0, 350).fingers[0].trail.map((p) => p.index), [2, 3]);
+  assert.deepEqual(replay.sampleLane(0, 400).fingers[0].trail.map((p) => p.index), [4]);
+  assert.deepEqual([...replay.sampleSegments().pairs], [0, 1, 2, 3]);
+  assert.deepEqual(replay.sampleLane(0, 200).fingers[0].trail.map((p) => p.index), [2], 'backseek preserves the contact boundary');
+});
+
 test('legacy packs disclose quantized axes and unknown fingers instead of inventing finger trails', () => {
   const pack = makePack([[{ t: 100, x: .123456, y: .789012 }, { t: 200, x: .3, y: .7 }]], { exact: false });
   const point = readGesture(pack, 0);

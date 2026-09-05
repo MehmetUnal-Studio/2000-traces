@@ -4,7 +4,7 @@
 // that URL and revokes it when the preview closes or is replaced.
 import * as THREE from 'three';
 
-export async function exportStill({ renderer, scene, uniforms, playheadMat = null, sessionId, size = 4096, render, mode = 'nebula', activity = 0 }) {
+export async function exportStill({ renderer, scene, uniforms, playheadMat = null, sessionId, size = 4096, render, mode = 'nebula', activity = 0, motion = null }) {
   const extent = 1.12;
   const camera = new THREE.PerspectiveCamera(45, 1, .008, 80);
   camera.position.z = extent / Math.sin(Math.PI / 8);
@@ -27,6 +27,12 @@ export async function exportStill({ renderer, scene, uniforms, playheadMat = nul
   const prevAnimation = uniforms.uAnimation?.value;
   const prevActivity = uniforms.uActivity?.value;
   const prevViewport = uniforms.uViewportHeight?.value;
+  const motionFields = [['uMotionSpeed', 'speed01'], ['uMotionTurn', 'turn01'], ['uMotionCoherence', 'coherence'], ['uMotionEnergy', 'energy']];
+  const prevMotion = motionFields.filter(([key]) => uniforms[key]).map(([key]) => [key, uniforms[key].value]);
+  for (const [key, field] of motionFields) if (uniforms[key]) {
+    const value = motion?.[field];
+    uniforms[key].value = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+  }
   if (uniforms.uViewportHeight) uniforms.uViewportHeight.value = size;
   if (uniforms.uAnimation) uniforms.uAnimation.value = 0;
   if (uniforms.uActivity) uniforms.uActivity.value = Math.max(0, Math.min(1, activity));
@@ -41,16 +47,15 @@ export async function exportStill({ renderer, scene, uniforms, playheadMat = nul
   uniforms.uPointMax.value = Math.max(prevMax, prevMax * uniforms.uPointScale.value / Math.max(1, prevScale));
   if (playheadMat) playheadMat.opacity = 0;
 
-  const pixels = new Uint8Array(size * size * 4);
+  let pixels;
   try {
+    pixels = new Uint8Array(size * size * 4);
     if (render) render(target, camera);
     else { renderer.setRenderTarget(target); renderer.render(scene, camera); }
     renderer.readRenderTargetPixels(target, 0, 0, size, size, pixels);
   } finally {
     // a throw (e.g. context loss allocating the 4096² MSAA target) must never
     // leave the live view stuck with forced export uniforms
-    renderer.setRenderTarget(prevTarget);
-    target.dispose();
     uniforms.uTime.value = prevTime;
     uniforms.uPointScale.value = prevScale;
     uniforms.uSelLane.value = prevSel;
@@ -61,8 +66,12 @@ export async function exportStill({ renderer, scene, uniforms, playheadMat = nul
     if (uniforms.uOrbit) uniforms.uOrbit.value = prevOrbit;
     if (uniforms.uAnimation) uniforms.uAnimation.value = prevAnimation;
     if (uniforms.uActivity) uniforms.uActivity.value = prevActivity;
+    for (const [key, value] of prevMotion) uniforms[key].value = value;
     if (uniforms.uViewportHeight) uniforms.uViewportHeight.value = prevViewport;
     if (playheadMat) playheadMat.opacity = prevPlayhead;
+    // Restore scene state before GPU cleanup: even a failed target rebind
+    // during context loss must not leave the four motion controls in print state.
+    try { renderer.setRenderTarget(prevTarget); } finally { target.dispose(); }
   }
 
   // flip vertically into a canvas

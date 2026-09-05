@@ -86,7 +86,7 @@ export function createCameraRig(initial = fittedCameraPose({ width: 1440, height
         const progress = journey.elapsed / journey.duration;
         const ease = .5 - .5 * Math.cos(Math.PI * progress);
         const from = journey.from;
-        current = normalize({ distance: Math.exp(Math.log(from.distance) + (Math.log(.65) - Math.log(from.distance)) * ease),
+        current = normalize({ distance: Math.exp(Math.log(from.distance) + (Math.log(.95) - Math.log(from.distance)) * ease),
           yaw: from.yaw + journey.yaw * ease, pitch: from.pitch,
           target: { x: from.target.x * (1 - ease), y: from.target.y * (1 - ease), z: from.target.z * (1 - ease) } });
         desired = copy(current);

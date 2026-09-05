@@ -83,12 +83,12 @@ test('explicit journey reaches the core view after twelve seconds with a gentle 
   rig.startJourney();
   rig.tick(6000);
   assert.equal(rig.journeyActive, true);
-  assert.ok(rig.state.distance < 4 && rig.state.distance > .65);
+  assert.ok(rig.state.distance < 4 && rig.state.distance > .95);
   assert.ok(Math.abs(rig.state.yaw - .49) < 1e-12);
   assert.ok(Math.abs(rig.state.target.y + .15) < 1e-12);
   rig.tick(6000);
   assert.equal(rig.journeyActive, false);
-  assert.ok(Math.abs(rig.state.distance - .65) < 1e-12);
+  assert.ok(Math.abs(rig.state.distance - .95) < 1e-12);
   assert.ok(Math.abs(rig.state.yaw - .58) < 1e-12);
   assert.deepEqual(rig.state.target, { x: 0, y: -0, z: 0 });
   assert.equal(cameraFor(rig.state).zoom, 1);
@@ -113,5 +113,5 @@ test('reduced-motion journey uses a short straight move, with core collision pro
     assert.ok(Math.hypot(...Object.values(rig.position)) >= CAMERA_LIMITS.coreClearance);
   }
   assert.equal(rig.journeyActive, false);
-  assert.ok(Math.abs(rig.state.distance - .65) < 1e-12);
+  assert.ok(Math.abs(rig.state.distance - .95) < 1e-12);
 });

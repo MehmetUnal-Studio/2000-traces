@@ -1,5 +1,9 @@
 # Spatial Nebula and camera validation
 
+Historical baseline. The current curved-ray core, motion-driven clouds and
+updated camera endpoint are documented in
+[Nebula motion validation](NEBULA-MOTION-VALIDATION.md).
+
 Validated locally on 2026-09-05 against the saved three-minute pack
 `kayit-2026-09-05T14-01-15-589Z` (90 participants / 123,254 events).
 

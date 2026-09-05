@@ -1,9 +1,12 @@
 import * as THREE from 'three';
 import { createGestureReplay, readGesture, TYPE } from './gesture-replay.js';
 import { createPackFlowEnergy } from './flow-energy.js';
+import { createPackMotionSignals } from './motion-signals.js';
 import { projectLens, lensSourceNdc } from './lensing.js';
+import { traceCoreRay } from './core-ray.js';
 import { DUST_VERTEX, DUST_FRAGMENT, ATMOSPHERE_VERTEX, ATMOSPHERE_FRAGMENT, FILAMENT_VERTEX, FILAMENT_FRAGMENT,
-  CORE_VERTEX, CORE_FRAGMENT, HORIZON_FRAGMENT, PHOTON_SHELL_FRAGMENT } from './nebula-shaders.js';
+  } from './nebula-shaders.js';
+import { createLensedCore } from './core-lensing.js';
 
 const TAU=Math.PI*2;
 export const NEBULA_LIMITS=Object.freeze({ points:230000, notes:26000, halos:7000, segments:100000 });
@@ -22,6 +25,7 @@ export function createNebulaUniforms(durationMs=1) {
   return {
     uDuration:{value:Math.max(1,durationMs)},uTime:{value:0},uOrbit:{value:0},uTilt:{value:0},
     uActivity:{value:0},uAnimation:{value:0},uDepthPass:{value:0},
+    uMotionSpeed:{value:0},uMotionTurn:{value:0},uMotionCoherence:{value:0},uMotionEnergy:{value:0},
     uReplaying:{value:0},uSelLane:{value:-1},uHoverLane:{value:-1},
     uPointScale:{value:500},uPointMax:{value:128},uViewportHeight:{value:1000},uHasData:{value:0},
     uSelRow:{value:-1},uSelColumn:{value:-1},uHoverRow:{value:-1},uHoverColumn:{value:-1},
@@ -72,10 +76,10 @@ export function createNebulaCameraPicker(uniforms,positions,{
 }={}) {
   let camera=null;
   const rotation=new THREE.Matrix4(),scratch=new THREE.Matrix4(),world=new THREE.Matrix4();
-  const view=new THREE.Matrix4(),clip=new THREE.Matrix4(),identity=new THREE.Matrix4();
+  const view=new THREE.Matrix4(),clip=new THREE.Matrix4(),identity=new THREE.Matrix4(),inverseWorld=new THREE.Matrix4();
   const raycaster=new THREE.Raycaster(),pointer=new THREE.Vector2();
   const sphere=new THREE.Sphere(new THREE.Vector3(),NEBULA_CORE_RADIUS);
-  const intersection=new THREE.Vector3(),rayOrigin=new THREE.Vector3(),rayDirection=new THREE.Vector3();
+  const rayOrigin=new THREE.Vector3(),rayDirection=new THREE.Vector3(),corePoint=new THREE.Vector3();
   const setCamera=(value,viewportHeight)=>{
     camera=value;
     if(Number.isFinite(viewportHeight)&&viewportHeight>0) uniforms.uViewportHeight.value=viewportHeight;
@@ -98,8 +102,28 @@ export function createNebulaCameraPicker(uniforms,positions,{
     // than moving source points forward. Cache its two depth-dependent cases.
     const backgroundSource=lensSourceNdc(x,y,lens);
     const foregroundSource={x,y};
-    const sphereHit=raycaster.ray.intersectSphere(sphere,intersection);
-    const horizonDistance=sphereHit?intersection.distanceTo(raycaster.ray.origin):Infinity;
+    // The curved ray's captured shadow is wider than a straight sphere hit.
+    // Trace the actual displayed ray in the same disk frame as the core shader.
+    inverseWorld.copy(world).invert();
+    rayOrigin.copy(raycaster.ray.origin).applyMatrix4(inverseWorld);
+    rayDirection.copy(raycaster.ray.direction).transformDirection(inverseWorld);
+    const perspective=!!camera.isPerspectiveCamera;
+    const pixelCone=2/(Math.abs(camera.projectionMatrix.elements[5])*Math.max(1,uniforms.uViewportHeight.value))/
+      (perspective?1:world.getMaxScaleOnAxis());
+    const coreRay=traceCoreRay(rayOrigin.toArray(),rayDirection.toArray(),{
+      pixelCone,perspective,animation:uniforms.uAnimation?.value??0,
+      motionSpeed:uniforms.uMotionSpeed?.value??0,motionTurn:uniforms.uMotionTurn?.value??0,
+      motionCoherence:uniforms.uMotionCoherence?.value??0,
+    });
+    let occlusionDepth=Infinity;
+    if(coreRay.captured) {
+      // Finite plasma thickness writes depth even for exactly edge-on rays
+      // that never cross the disk's mathematical middle plane.
+      for(const point of coreRay.depthPoints) {
+        corePoint.fromArray(point).applyMatrix4(view);
+        if(corePoint.z<0)occlusionDepth=Math.min(occlusionDepth,-corePoint.z);
+      }
+    }
     rayOrigin.copy(raycaster.ray.origin).applyMatrix4(camera.matrixWorldInverse);
     rayDirection.copy(raycaster.ray.direction).transformDirection(camera.matrixWorldInverse);
     const aspect=camera.isPerspectiveCamera?camera.aspect:(camera.right-camera.left)/(camera.top-camera.bottom);
@@ -129,10 +153,9 @@ export function createNebulaCameraPicker(uniforms,positions,{
       const vx=v[0]*px+v[4]*py+v[8]*pz+v[12];
       const vy=v[1]*px+v[5]*py+v[9]*pz+v[13];
       const depth=(vx-rayOrigin.x)*rayDirection.x+(vy-rayOrigin.y)*rayDirection.y+(vz-rayOrigin.z)*rayDirection.z;
-      // A foreground gesture may cross the horizon's screen silhouette. Only
-      // the displayed ray is tested: an image outside the horizon can show a
-      // bent background source whose unwarped projection was behind the sphere.
-      if(sphereHit&&(background || depth>horizonDistance+0.0001))continue;
+      // Captured rear images are opaque, but a real point in front of the
+      // emitting core remains visible even inside that screen silhouette.
+      if(coreRay.captured&&-vz>=occlusionDepth-0.0001)continue;
       if(Math.abs(distance-best)<=tieTolerance&&depth>=bestDepth)continue;
       best=distance;bestDepth=depth;nearest=index;
     }
@@ -176,7 +199,8 @@ export function makePointMaterial(uniforms,atmosphere=false) {
 
 // data = [timeMs, lane, isNoteOn, heat], sizes = [worldDiameter, radiance].
 // Atmosphere uses instanced quads; its other attributes share the same contract.
-export function makePoints(positions,data,sizes,uniforms,name,atmosphere=false) {
+export function makePoints(positions,data,sizes,uniforms,name,atmosphere=false,motion=null) {
+  const motionData=motion??new Float32Array(positions.length/3*4);
   if(atmosphere) {
     const quad=new THREE.PlaneGeometry(1,1);
     const geometry=new THREE.InstancedBufferGeometry();geometry.index=quad.index;
@@ -184,6 +208,7 @@ export function makePoints(positions,data,sizes,uniforms,name,atmosphere=false) 
     geometry.setAttribute('aCenter',new THREE.InstancedBufferAttribute(positions,3));
     geometry.setAttribute('aData',new THREE.InstancedBufferAttribute(data,4));
     geometry.setAttribute('aSize',new THREE.InstancedBufferAttribute(sizes,2));
+    geometry.setAttribute('aMotion',new THREE.InstancedBufferAttribute(motionData,4));
     geometry.instanceCount=positions.length/3;
     const mesh=new THREE.Mesh(geometry,makePointMaterial(uniforms,true));mesh.name=name;mesh.frustumCulled=false;mesh.renderOrder=0;
     return mesh;
@@ -192,6 +217,7 @@ export function makePoints(positions,data,sizes,uniforms,name,atmosphere=false) 
   geometry.setAttribute('position',new THREE.BufferAttribute(positions,3));
   geometry.setAttribute('aData',new THREE.BufferAttribute(data,4));
   geometry.setAttribute('aSize',new THREE.BufferAttribute(sizes,2));
+  geometry.setAttribute('aMotion',new THREE.BufferAttribute(motionData,4));
   geometry.boundingSphere=new THREE.Sphere(new THREE.Vector3(),1.2);
   const points=new THREE.Points(geometry,makePointMaterial(uniforms,atmosphere));
   points.name=name;
@@ -200,21 +226,23 @@ export function makePoints(positions,data,sizes,uniforms,name,atmosphere=false) 
   return points;
 }
 
-export function makeFilaments(pack,pairs,uniforms) {
+export function makeFilaments(pack,pairs,uniforms,motionAttributes=null) {
   const count=pairs.length/2;
-  const starts=new Float32Array(count*3),ends=new Float32Array(count*3),data=new Float32Array(count*4);
+  const starts=new Float32Array(count*3),ends=new Float32Array(count*3),data=new Float32Array(count*4),motion=new Float32Array(count*4);
   for(let i=0;i<count;i++) {
     const first=readGesture(pack,pairs[i*2]),last=readGesture(pack,pairs[i*2+1]);
     const a=nebulaEventPosition(first,pack.manifest),b=nebulaEventPosition(last,pack.manifest);
     starts.set([a.x,a.y,a.z],i*3);ends.set([b.x,b.y,b.z],i*3);
     data.set([last.t,last.lane,lightTemperature(last,pack.manifest.durationMs),Math.min(1,Math.hypot(last.x-first.x,last.y-first.y)*4)],i*4);
+    if(motionAttributes)motion.set([motionAttributes.speed01[pairs[i*2+1]],motionAttributes.turn01[pairs[i*2+1]],
+      motionAttributes.directionX[pairs[i*2+1]],motionAttributes.directionY[pairs[i*2+1]]],i*4);
   }
-  return makeFilamentSegments(starts,ends,data,uniforms);
+  return makeFilamentSegments(starts,ends,data,uniforms,'nebula-recorded-finger-filaments',motion);
 }
 
 // The live renderer can fill these bounded arrays directly without inventing
 // a pack. data = [secondEventTimeMs, lane, heat, normalizedXyDisplacement].
-export function makeFilamentSegments(starts,ends,data,uniforms,name='nebula-recorded-finger-filaments') {
+export function makeFilamentSegments(starts,ends,data,uniforms,name='nebula-recorded-finger-filaments',motion=null) {
   const count=starts.length/3;
   const geometry=new THREE.InstancedBufferGeometry();
   geometry.setAttribute('position',new THREE.BufferAttribute(new Float32Array([0,-1,0,1,-1,0,1,1,0,0,1,0]),3));
@@ -222,6 +250,7 @@ export function makeFilamentSegments(starts,ends,data,uniforms,name='nebula-reco
   geometry.setAttribute('aStart',new THREE.InstancedBufferAttribute(starts,3));
   geometry.setAttribute('aEnd',new THREE.InstancedBufferAttribute(ends,3));
   geometry.setAttribute('aData',new THREE.InstancedBufferAttribute(data,4));
+  geometry.setAttribute('aMotion',new THREE.InstancedBufferAttribute(motion??new Float32Array(count*4),4));
   geometry.instanceCount=count;
   const material=new THREE.ShaderMaterial({uniforms,vertexShader:FILAMENT_VERTEX,fragmentShader:FILAMENT_FRAGMENT,
     transparent:true,depthWrite:false,depthTest:true,side:THREE.DoubleSide,forceSinglePass:true,blending:THREE.AdditiveBlending});
@@ -231,31 +260,7 @@ export function makeFilamentSegments(starts,ends,data,uniforms,name='nebula-reco
 }
 
 export function createNebulaCore(uniforms) {
-  const core=new THREE.Group();core.name='nebula-spatial-core';
-  core.userData.nebulaCore=true;core.userData.horizonRadius=NEBULA_CORE_RADIUS;
-  const sphere=new THREE.Mesh(new THREE.SphereGeometry(NEBULA_CORE_RADIUS,96,64),
-    new THREE.ShaderMaterial({uniforms,vertexShader:CORE_VERTEX,fragmentShader:HORIZON_FRAGMENT,
-      depthTest:true,depthWrite:true}));
-  sphere.name='nebula-event-horizon';sphere.userData.eventHorizon=true;
-  core.add(sphere);
-  const torus=(radius,tube,height,layer,name)=>{
-    const geometry=new THREE.TorusGeometry(radius,tube,24,256);
-    geometry.scale(1,1,height);
-    const material=new THREE.ShaderMaterial({uniforms:{...uniforms,uCoronaLayer:{value:layer}},
-      vertexShader:CORE_VERTEX,fragmentShader:CORE_FRAGMENT,transparent:true,premultipliedAlpha:true,
-      depthTest:true,depthWrite:layer!==1,side:layer===1?THREE.DoubleSide:THREE.FrontSide,forceSinglePass:true});
-    const mesh=new THREE.Mesh(geometry,material);mesh.name=name;mesh.renderOrder=layer===1?1:2;
-    core.add(mesh);
-  };
-  torus(0.310,0.087,0.075,0,'nebula-accretion-torus');
-  torus(0.330,0.118,0.20,1,'nebula-volumetric-torus');
-  torus(0.222,0.0018,0.8,2,'nebula-orbital-photon-filament');
-  const photon=new THREE.Mesh(new THREE.SphereGeometry(NEBULA_CORE_RADIUS+0.006,96,64),
-    new THREE.ShaderMaterial({uniforms,vertexShader:CORE_VERTEX,fragmentShader:PHOTON_SHELL_FRAGMENT,
-      transparent:true,premultipliedAlpha:true,depthWrite:false,depthTest:true}));
-  photon.name='nebula-photon-sphere';photon.renderOrder=3;core.add(photon);
-  core.traverse((object)=>{object.layers.set(1);object.frustumCulled=false;object.userData.nebulaCore=true;});
-  return core;
+  return createLensedCore(uniforms);
 }
 
 export function lightTemperature(gesture,durationMs) {
@@ -272,17 +277,18 @@ export function cloudEnvelope(gesture,durationMs) {
   return (0.08+0.92*cloud*cloud)*shoulder;
 }
 
-export function buildNebula(pack,layout,{segmentPairs,replay}={}) {
+export function buildNebula(pack,layout,{segmentPairs,replay,motionSignals}={}) {
   const durationMs=Math.max(1,pack.manifest.durationMs);
   const sampled=sampleEvents(pack),count=sampled.indices.length;
   const flow=createPackFlowEnergy(pack);
+  const motion=motionSignals??createPackMotionSignals(pack),motionAttributes=motion.attributes;
   const uniforms=createNebulaUniforms(durationMs);
   uniforms.uTime.value=durationMs;uniforms.uHasData.value=count?1:0;
   const group=new THREE.Group();group.name='nebula-recorded-gesture-field';
-  const positions=new Float32Array(count*3),data=new Float32Array(count*4),sizes=new Float32Array(count*2),exactTimes=new Float64Array(count);
+  const positions=new Float32Array(count*3),data=new Float32Array(count*4),sizes=new Float32Array(count*2),exactTimes=new Float64Array(count),motionData=new Float32Array(count*4);
   const grid=Array.from({length:GRID*GRID},()=>[]);
   const bin=(coordinate)=>clamp(Math.floor((coordinate+EXTENT)/(2*EXTENT)*GRID),0,GRID-1);
-  const haloPositions=[],haloData=[],haloSizes=[];
+  const haloPositions=[],haloData=[],haloSizes=[],haloMotion=[];
   const haloStride=Math.max(1,Math.ceil(count/NEBULA_LIMITS.halos));
   const moveDensity=Math.min(3,Math.sqrt(70000/Math.max(1,Math.min(sampled.totalMoves,NEBULA_LIMITS.points))));
   const noteDensity=Math.min(2,Math.sqrt(7500/Math.max(1,Math.min(sampled.totalNotes,NEBULA_LIMITS.notes))));
@@ -297,14 +303,17 @@ export function buildNebula(pack,layout,{segmentPairs,replay}={}) {
     const diameter=note?(bright?0.034:0.011):0.004+extent*0.004;
     const radiance=note?noteDensity*(bright?1.2:0.40)*(0.25+cloud*0.75):moveDensity*(0.13+extent*0.13)*cloud;
     positions.set([p.x,p.y,p.z],i*3);data.set([gesture.t,gesture.lane,note,heat],i*4);sizes.set([diameter,radiance],i*2);exactTimes[i]=gesture.t;
+    const sourceIndex=sampled.indices[i];
+    motionData.set([motionAttributes.speed01[sourceIndex],motionAttributes.turn01[sourceIndex],motionAttributes.directionX[sourceIndex],motionAttributes.directionY[sourceIndex]],i*4);
     grid[bin(p.y)*GRID+bin(p.x)].push(i);
     if(i%haloStride===0) {
       haloPositions.push(p.x,p.y,p.z);haloData.push(gesture.t,gesture.lane,0,heat);
       haloSizes.push(0.08+extent*0.14,0.013*cloud*Math.min(2,Math.sqrt(7000/Math.max(1,count/haloStride))));
+      haloMotion.push(...motionData.subarray(i*4,i*4+4));
     }
   }
-  const dust=makePoints(positions,data,sizes,uniforms,'nebula-actual-event-starlight');group.add(dust);
-  const haze=makePoints(Float32Array.from(haloPositions),Float32Array.from(haloData),Float32Array.from(haloSizes),uniforms,'nebula-event-atmosphere',true);group.add(haze);
+  const dust=makePoints(positions,data,sizes,uniforms,'nebula-actual-event-starlight',false,motionData);group.add(dust);
+  const haze=makePoints(Float32Array.from(haloPositions),Float32Array.from(haloData),Float32Array.from(haloSizes),uniforms,'nebula-event-atmosphere',true,Float32Array.from(haloMotion));group.add(haze);
   let totalSegments=segmentPairs?.length/2??0;
   if(!segmentPairs) {
     const index=replay??createGestureReplay(pack,{cacheLanes:1});
@@ -313,7 +322,7 @@ export function buildNebula(pack,layout,{segmentPairs,replay}={}) {
     if(!replay) index.clearCache();
   }
   const pairs=segmentPairs.subarray(0,NEBULA_LIMITS.segments*2);
-  const filaments=makeFilaments(pack,pairs,uniforms);group.add(filaments);
+  const filaments=makeFilaments(pack,pairs,uniforms,motionAttributes);group.add(filaments);
   group.add(createNebulaCore(uniforms));
   const playheadMat=new THREE.LineBasicMaterial({transparent:true,opacity:0});
   const playhead=new THREE.Group();playhead.name='nebula-playback';playhead.visible=false;group.add(playhead);
@@ -340,8 +349,14 @@ export function buildNebula(pack,layout,{segmentPairs,replay}={}) {
     }
     return nearest<0?null:hitAt(nearest);
   };
+  const motionForEvent=(index)=>{
+    if(!Number.isInteger(index)||index<0||index>=pack.manifest.eventCount)return null;
+    return {valid:!!motionAttributes.valid[index],speed:motionAttributes.speed[index],speed01:motionAttributes.speed01[index],
+      turn:motionAttributes.turn[index],turn01:motionAttributes.turn01[index],directionX:motionAttributes.directionX[index],directionY:motionAttributes.directionY[index],energy:motionAttributes.energy[index]};
+  };
   const hitAt=(nearest)=>{
     const index=sampled.indices[nearest],gesture=readGesture(pack,index),participant=pack.manifest.participants[gesture.lane];
+    gesture.motion=motionForEvent(index);
     return {key:`gesture:${index}`,kind:'gesture',lane:gesture.lane,row:null,column:null,index,gesture,
       title:String(participant.p),meta:`${gesture.kind===TYPE.noteOn?'Nota başlangıcı':'Parmak hareketi'} · <b>${(gesture.t/1000).toFixed(3)} sn</b><br>`+
         `X ${gesture.x.toFixed(4)} · Y ${gesture.y.toFixed(4)} · ${gesture.finger===null?'Parmak kimliği kaydedilmemiş':`Parmak ${escapeHtml(gesture.finger)}`}<br>`+
@@ -364,11 +379,14 @@ export function buildNebula(pack,layout,{segmentPairs,replay}={}) {
     // The same causal activity function drives live input and archive seeks.
     // Sampling has no history, so reversing or looping cannot retain a flare.
     setActivity(flow.sample(uniforms.uTime.value).energy);
+    const signals=motion.sample(uniforms.uTime.value);
+    uniforms.uMotionSpeed.value=signals.speed01;uniforms.uMotionTurn.value=signals.turn01;
+    uniforms.uMotionCoherence.value=signals.coherence;uniforms.uMotionEnergy.value=signals.energy;
   };
   let disposed=false;
   const dispose=()=>{if(disposed)return;disposed=true;group.traverse((child)=>{child.geometry?.dispose();child.material?.dispose();});playheadMat.dispose();grid.length=0;cameraPicker.setCamera(null);};
   updatePlayhead(durationMs);
-  return {group,uniforms,playhead,playheadMat,updatePlayhead,activityAt:(time)=>flow.sample(time).energy,setActivity,inspect,updateHover,setInspection,dispose,
+  return {group,uniforms,playhead,playheadMat,updatePlayhead,activityAt:(time)=>flow.sample(time).energy,motionAt:(time)=>motion.sample(time),motionForEvent,setActivity,inspect,updateHover,setInspection,dispose,
     setCamera:cameraPicker.setCamera,inspectNdc:cameraPicker.inspectNdc,updateHoverNdc,
     setViewMode:()=>{},layout,kind:'nebula',grainCount:count,strokeSegments:pairs.length/2,
     sampledIndices:sampled.indices,segmentPairs:pairs,stats:{points:count,halos:haloPositions.length/3,segments:pairs.length/2,totalSegments,totalNotes:sampled.totalNotes,totalMoves:sampled.totalMoves},

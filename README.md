@@ -19,7 +19,9 @@ Open [the entrance](http://127.0.0.1:5174/) for **Stars of The Year / Senenin Y�
 
 In Nebula, X bends an orbit and Y changes its radius and depth. Known fingers create paths through their actual recorded coordinates; gaps and releases break those paths. The X/Y inspector replays the source independently of the bounded GPU sample. New packs preserve full JavaScript-number precision, timestamps, missing values and finger identity in `gestures.bin`; legacy 16-bit packs remain readable. Raw JSONL can be repacked to recover fields the older visual binary omitted. Read [how to explore and interpret the artwork](docs/ARTWORK.md) for mappings, controls and limits, and [the X/Y acceptance report](docs/XY-VALIDATION.md) for the earlier synthetic live test.
 
-Use `?pack=<local-pack-name>` to open a saved artwork directly. Its selection is retained in the page URL; these URLs refer to files on the same local installation. Drag to pan, use the wheel or two fingers to zoom, and use **Shift + drag** or **Eseri oku → Bakış / eğim** to inspect the depth. These view controls also work during live recording.
+Use `?pack=<local-pack-name>` to open a saved artwork directly. Its selection is retained in the page URL; these URLs refer to files on the same local installation. Drag to orbit, use the wheel or two fingers to approach, and use **Shift + drag** to pan. **Eseri oku → Bakış / eğim** changes the disk inclination; **Kara deliğe yaklaş** starts an interruptible camera journey. These view controls also work during live recording.
+
+The core now bends its own disk light along curved world rays, while continuous cloud structure shades the recorded footprints. Exact per-finger speed and direction changes control light, traces and cloud detail; the selected-event panel exposes those measurements. Legacy packs without finger identity keep their artwork but show motion as unavailable. See the [curved-core and motion validation report](docs/NEBULA-MOTION-VALIDATION.md) for evidence and approximation limits.
 
 Flow intensity is causal: recent note/move events increase it, silence produces an approximately one-second exponential decay, and seeking samples the corresponding recorded history. Status messages do not add activity. The live view and archive share the same scale. Blue/amber material and the reactive corona are artistic lighting, not acoustic-energy measurements or a physical black-hole simulation; optional orbit motion does not imply incoming data.
 
@@ -73,6 +75,9 @@ Completed raw takes appear in `sessions/`; automatic visual packs appear in `viz
 | `viz/src/live-nebula.js` | Incremental live geometry using the same Nebula materials and coordinate mapping |
 | `viz/src/gesture-replay.js` | Original X/Y access, per-finger seek/loop state and gap-aware trails |
 | `viz/src/flow-energy.js` | Shared causal note/movement rate and activity response for live and archive |
+| `viz/src/motion-signals.js` | Exact per-finger speed/turn, collective coherence and causal archive seeking |
+| `viz/src/core-lensing.js`, `viz/src/core-ray.js` | Camera-derived curved disk light, finite-slab depth and matching selection |
+| `viz/src/nebula-volume.js` | Continuous cloud structure shading actual event footprints |
 | `viz/src/` | Three.js rendering, materials, layout, demo generation and pack loading |
 | `test/` | Recorder, transport, server, pack and viewer regression coverage |
 

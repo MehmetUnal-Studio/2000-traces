@@ -106,6 +106,9 @@ export function createGestureReplay(pack, { gapMs = 1200, cacheLanes = 8 } = {})
       if (event.kind !== TYPE.noteOn && event.kind !== TYPE.move) continue;
       const track = getTrack(event.finger);
       if (!event.hasXY) { close(track, event.t); continue; }
+      // A fresh contact starts a new path even when a release was not received.
+      // This also matches the live renderer's noteOn boundary at tied times.
+      if (event.kind === TYPE.noteOn) close(track, event.t);
       const lastTime = track.times.at(-1);
       if (track.current && event.t - lastTime > gapMs) close(track, lastTime + gapMs);
       if (!track.current) {

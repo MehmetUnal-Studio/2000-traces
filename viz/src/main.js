@@ -80,6 +80,7 @@ const hud = createHud({
       sessionId: current.pack.manifest.sessionId,
       render: (target, camera) => view.render(target, camera),
       mode: viewMode, activity: current.disc.activityAt(current.pack.manifest.durationMs),
+      motion: current.disc.motionAt?.(current.pack.manifest.durationMs),
     }).finally(() => { lastRenderStamp = null; }); // release print-sized intermediate GPU targets
   },
   onFit: () => view.fit(),
@@ -307,18 +308,26 @@ function syncGesture() {
   const stamp = `${selected.lane}:${finger?.finger}:${finger?.index}:${finger?.active}:${finger?.trail[0]?.index}`;
   if (current.gestureStamp === stamp) return;
   current.gestureStamp = stamp;
+  const motion = Number.isInteger(finger?.index) ? current.disc.motionForEvent?.(finger.index) : null;
   hud.setGestureState({ lane: selected.lane, pid: state.pid, exact: state.exact,
     hasXY: Boolean(finger), x: finger?.x, y: finger?.y, t: finger?.t,
-    finger: finger?.finger, active: finger?.active ?? false,
+    finger: finger?.finger, active: finger?.active ?? false, motion,
     trail: finger?.finger === null ? [] : finger?.trail ?? [] });
 }
 
 // Live isolation: selection keyed by (z,s), not lane index — a derived→
 // genuine roster rebuild reshuffles lanes, and the pid must survive it.
-function selectLive(lane) {
+function selectLive(lane, gesture = null) {
   if (!live?.disc) return;
   const meta = lane === null ? null : live.laneMeta?.[lane] ?? null;
-  live.sel = meta ? { z: meta.zone, s: meta.seat, pid: meta.pid } : null;
+  const finger = gesture ? gesture.finger : undefined;
+  const latest = meta && gesture ? live.disc.sampleLane(lane, live.maxT, finger) : null;
+  live.sel = meta ? { z: meta.zone, s: meta.seat, pid: meta.pid, finger,
+    // Keep the precise clicked observation visible until a new observation
+    // from that same finger arrives. Another finger must never replace it.
+    previewGesture: gesture ? { ...gesture, active: false, trail: [] } : null,
+    followAfter: latest ? { t: latest.t, index: latest.index } : null,
+  } : null;
   live.selShown = null; // force the seat panel refresh in the frame loop
   live.disc.uniforms.uSelLane.value = meta ? lane : -1;
   if (!meta) hud.showSeat(null);
@@ -334,7 +343,8 @@ function applyLiveSel() {
 
 view.onCanvasClick((x, y) => {
   if (live?.disc) {
-    selectLive(live.disc.inspectNdc(x, y)?.lane ?? null); return;
+    const hit = live.disc.inspectNdc(x, y);
+    selectLive(hit?.lane ?? null, hit?.gesture ?? null); return;
   }
   if (!current) return;
   const hit = current.disc.inspectNdc(x, y);
@@ -830,7 +840,11 @@ function frame(now) {
             `${count.toLocaleString('tr-TR')} olay · canlı`,
         });
       }
-      const gesture = d.sampleLane(lane, time);
+      const latest = d.sampleLane(lane, time, live.sel.finger);
+      const boundary = live.sel.followAfter;
+      if (live.sel.previewGesture && live.sel.finger !== null && latest && (!boundary || latest.t > boundary.t ||
+        (latest.t === boundary.t && latest.index > boundary.index))) live.sel.previewGesture = null;
+      const gesture = live.sel.previewGesture ?? latest;
       hud.setGestureState({lane, pid:live.sel.pid, exact:true, hasXY:Boolean(gesture), ...gesture});
     }
     if (!live.stopping) {

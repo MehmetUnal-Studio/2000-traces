@@ -1,5 +1,6 @@
 // Linear-light materials: the shared artwork pipeline owns exposure and bloom.
 // Positions come from recorded X/Y; only their view transform lives on the GPU.
+import { NEBULA_VOLUME } from './nebula-volume.js';
 export const NEBULA_TRANSFORM = /* glsl */ `
   uniform float uTime;
   uniform float uDuration;
@@ -39,6 +40,7 @@ export const NEBULA_PIXEL_SCALE = /* glsl */ `
 export const DUST_VERTEX = /* glsl */ `
   attribute vec4 aData; // event time, participant lane, note onset, light temperature
   attribute vec2 aSize; // world-space sprite diameter, radiance
+  attribute vec4 aMotion; // measured speed, turn, X direction, Y direction
   uniform float uPointScale;
   uniform float uPointMax;
   uniform float uSelLane;
@@ -49,8 +51,10 @@ export const DUST_VERTEX = /* glsl */ `
   varying float vAlpha;
   varying float vNote;
   varying float vRotation;
+  varying float vMotionSpeed;
   ${NEBULA_TRANSFORM}
   ${NEBULA_PIXEL_SCALE}
+  ${NEBULA_VOLUME}
   void main() {
     vec3 p = nebulaTransform(position);
     vec4 viewPosition=modelViewMatrix*vec4(p,1.0);
@@ -59,17 +63,23 @@ export const DUST_VERTEX = /* glsl */ `
     float hover = (1.0-step(0.5, abs(aData.y-uHoverLane)))*0.5;
     float isolation = uSelLane < -0.5 ? 1.0 : mix(0.12, 2.3, focus);
     float recent = exp(-max(0.0, uTime-aData.x)/550.0)*uReplaying;
-    float diameter = aSize.x*nebulaPixelScale(viewPosition.xyz)*(1.0+focus*0.2+hover*0.15);
+    float diameter = aSize.x*nebulaPixelScale(viewPosition.xyz)*(1.0+focus*0.2+hover*0.15+aMotion.x*0.30);
     float rasterSize = clamp(diameter, 1.5, uPointMax);
     gl_PointSize = rasterSize;
     float coverage = min(1.0, diameter*diameter/(rasterSize*rasterSize));
     float visible = step(aData.x, uTime+0.0001);
     float depthLight = 0.67+0.55*smoothstep(-0.6, 0.6, p.z);
-    vAlpha = aSize.y*visible*isolation*coverage*depthLight*(1.0+recent*0.85+hover);
+    vec2 cloud=cloudStructure(position);
+    vAlpha = aSize.y*visible*isolation*coverage*depthLight*(1.0+recent*0.85+hover+aMotion.x*0.42);
+    vAlpha *= (0.28+cloud.x*1.45)*cloud.y;
     vColor = nebulaLight(aData.w);
     vColor = mix(vColor, vec3(0.9, 0.95, 1.0), aData.z*0.5);
     vNote = aData.z;
-    vRotation = atan(p.y,p.x)+0.5;
+    vec3 radial=normalize(vec3(position.xy,0.0));
+    vec3 direction=vec3(-radial.y,radial.x,0.0)*aMotion.z+radial*aMotion.w;
+    vec3 viewDirection=mat3(modelViewMatrix)*nebulaTransform(direction);
+    vRotation = length(viewDirection.xy)>0.000001 ? atan(viewDirection.y,viewDirection.x) : 0.0;
+    vMotionSpeed=aMotion.x;
   }
 `;
 
@@ -81,10 +91,12 @@ export const DUST_FRAGMENT = /* glsl */ `
   varying float vAlpha;
   varying float vNote;
   varying float vRotation;
+  varying float vMotionSpeed;
   void main() {
     vec2 q = gl_PointCoord*2.0-1.0;
     float c=cos(vRotation), s=sin(vRotation);
     q = mat2(c,s,-s,c)*q;
+    q.y *= 1.0+vMotionSpeed*1.15;
     q.y *= mix(1.0, 1.65, uAtmosphere);
     float r2=dot(q,q);
     if(r2>1.0 || vAlpha<0.00001) discard;
@@ -109,37 +121,85 @@ export const ATMOSPHERE_VERTEX = /* glsl */ `
   attribute vec3 aCenter;
   attribute vec4 aData;
   attribute vec2 aSize;
+  attribute vec4 aMotion;
   uniform float uSelLane;
   uniform float uHoverLane;
   varying vec2 vUv;
   varying vec3 vColor;
   varying float vAlpha;
-  varying float vNote;
-  varying float vRotation;
+  varying vec3 vVolumePosition;
+  varying vec3 vVolumeRay;
+  varying float vFootprint;
+  varying vec2 vMotion;
   ${NEBULA_TRANSFORM}
   void main() {
     vec3 p=nebulaTransform(aCenter);
-    vRotation=atan(p.y,p.x)+0.5;
     vec4 viewPosition=modelViewMatrix*vec4(p,1.0);
-    viewPosition.xy+=position.xy*aSize.x;
+    vec3 radial=normalize(vec3(aCenter.xy,0.0));
+    vec3 movement=vec3(-radial.y,radial.x,0.0)*aMotion.z+radial*aMotion.w;
+    vec3 direction=mat3(modelViewMatrix)*nebulaTransform(movement);
+    float angle=length(direction.xy)>0.000001 ? atan(direction.y,direction.x) : 0.0;
+    float c=cos(angle),s=sin(angle);
+    vec2 offset=mat2(c,s,-s,c)*(position.xy*vec2(1.0+aMotion.x*0.55,1.0-aMotion.x*0.22))*aSize.x;
+    viewPosition.xy+=offset;
+    mat3 basis=mat3(modelViewMatrix)*mat3(nebulaTransform(vec3(1,0,0)),nebulaTransform(vec3(0,1,0)),nebulaTransform(vec3(0,0,1)));
+    // Dot products transpose the rotation without requiring GLSL inverse().
+    vVolumePosition=aCenter+vec3(dot(basis[0].xy,offset),dot(basis[1].xy,offset),dot(basis[2].xy,offset));
+    vVolumeRay=vec3(basis[0].z,basis[1].z,basis[2].z);
+    vFootprint=aSize.x;
+    vMotion=aMotion.xy;
     gl_Position=projectionMatrix*viewPosition;
     float focus=1.0-step(0.5,abs(aData.y-uSelLane));
     float hover=(1.0-step(0.5,abs(aData.y-uHoverLane)))*0.5;
     float isolation=uSelLane < -0.5 ? 1.0 : mix(0.15,2.3,focus);
     vAlpha=aSize.y*step(aData.x,uTime+0.0001)*isolation*(1.0+hover);
     vColor=nebulaLight(aData.w);
-    vNote=0.0;
     vUv=uv;
   }
 `;
-export const ATMOSPHERE_FRAGMENT = DUST_FRAGMENT
-  .replace('precision highp float;', 'precision highp float;\nvarying vec2 vUv;')
-  .replace('gl_PointCoord', 'vUv');
+export const ATMOSPHERE_FRAGMENT = /* glsl */ `
+  precision highp float;
+  uniform float uDepthPass;
+  uniform float uAnimation;
+  uniform float uMotionCoherence;
+  varying vec2 vUv;
+  varying vec3 vColor;
+  varying float vAlpha;
+  varying vec3 vVolumePosition;
+  varying vec3 vVolumeRay;
+  varying float vFootprint;
+  varying vec2 vMotion;
+  ${NEBULA_VOLUME}
+  void main() {
+    if(uDepthPass>0.5||vAlpha<0.00001) discard;
+    vec2 q=vUv*2.0-1.0;
+    float radius=dot(q,q);
+    if(radius>1.0)discard;
+    vec3 p=vVolumePosition;
+    vec2 structure=cloudStructure(p);
+    // Three samples through the footprint soften gas into a volume. The fine
+    // field is revealed by approach rather than a screen-space noise overlay.
+    vec3 drift=vec3(0.013,-0.008,0.004)*uAnimation*(0.08+vMotion.x*0.30);
+    float fine=cloudNoise(p*69.0+drift);
+    fine+=cloudNoise((p+vVolumeRay*vFootprint*0.16)*69.0+drift);
+    fine+=cloudNoise((p-vVolumeRay*vFootprint*0.16)*69.0+drift);
+    fine/=3.0;
+    float curls=cloudNoise(p*(124.0+vMotion.y*48.0)-drift);
+    float gas=smoothstep(0.23,0.77,fine*0.75+curls*0.25);
+    gas=mix(gas,fine,uMotionCoherence*0.24);
+    float envelope=exp(-radius*2.4)*(1.0-smoothstep(0.45,1.0,radius));
+    float density=(0.07+structure.x*2.2)*structure.y*gas*envelope;
+    vec3 lit=mix(vColor*0.40,vColor*1.55,smoothstep(0.35,0.75,fine));
+    lit=mix(lit,vec3(0.58,0.69,0.72),smoothstep(0.71,0.94,structure.x)*0.28);
+    gl_FragColor=vec4(lit,vAlpha*density*(1.9+vMotion.x*0.55));
+  }
+`;
 
 export const FILAMENT_VERTEX = /* glsl */ `
   attribute vec3 aStart;
   attribute vec3 aEnd;
   attribute vec4 aData; // second event time, lane, heat, real X/Y displacement
+  attribute vec4 aMotion;
   uniform float uPointScale;
   uniform float uSelLane;
   uniform float uHoverLane;
@@ -149,12 +209,13 @@ export const FILAMENT_VERTEX = /* glsl */ `
   varying float vCoverage;
   ${NEBULA_TRANSFORM}
   ${NEBULA_PIXEL_SCALE}
+  ${NEBULA_VOLUME}
   void main() {
     vec3 start=(modelViewMatrix*vec4(nebulaTransform(aStart),1.0)).xyz;
     vec3 end=(modelViewMatrix*vec4(nebulaTransform(aEnd),1.0)).xyz;
     vec2 delta=end.xy-start.xy;
     vec2 perpendicular=vec2(-delta.y,delta.x)/max(length(delta),0.0000001);
-    float width=0.00055+aData.w*0.0008;
+    float width=(0.00055+aData.w*0.0008)*(1.0+aMotion.x*0.65);
     vec3 p=mix(start,end,position.x);
     float expanded=max(width,1.5/max(nebulaPixelScale(p),1.0));
     p.xy+=perpendicular*position.y*expanded;
@@ -165,7 +226,9 @@ export const FILAMENT_VERTEX = /* glsl */ `
     float isolation=uSelLane < -0.5 ? 1.0 : mix(0.08,4.0,focus);
     float hover=1.0-step(0.5,abs(aData.y-uHoverLane));
     vColor=nebulaLight(aData.z);
-    vAlpha=step(aData.x,uTime+0.0001)*isolation*(0.022+aData.w*0.040)*(1.0+hover*0.5);
+    vec2 cloud=cloudStructure(mix(aStart,aEnd,position.x));
+    vAlpha=step(aData.x,uTime+0.0001)*isolation*(0.022+aData.w*0.040)*(1.0+hover*0.5+aMotion.x*0.6);
+    vAlpha *= (0.30+cloud.x*1.1)*cloud.y;
   }
 `;
 
@@ -184,120 +247,5 @@ export const FILAMENT_FRAGMENT = /* glsl */ `
     float aa=max(fwidth(vAcross)*0.5,0.0001);
     float coverage=1.0-smoothstep(1.0-aa,1.0+aa,abs(vAcross));
     gl_FragColor=vec4(vColor,coverage*vCoverage*vAlpha);
-  }
-`;
-
-// Every core surface is actual world geometry. These varyings provide camera-
-// space normals and directions, so changing viewpoint changes its silhouette,
-// occlusion and emission coherently instead of merely rotating a screen quad.
-export const CORE_VERTEX = /* glsl */ `
-  varying vec2 vUv;
-  varying vec3 vLocal;
-  varying vec3 vNormal;
-  varying vec3 vView;
-  ${NEBULA_TRANSFORM}
-  void main() {
-    vUv=uv;
-    vLocal=position;
-    vec4 viewPosition=modelViewMatrix*vec4(nebulaTransform(position),1.0);
-    vNormal=normalize(normalMatrix*nebulaTransform(normal));
-    vView=-viewPosition.xyz;
-    gl_Position=projectionMatrix*viewPosition;
-  }
-`;
-
-export const HORIZON_FRAGMENT = /* glsl */ `
-  precision highp float;
-  void main() { gl_FragColor=vec4(0.0,0.0,0.0,1.0); }
-`;
-
-const PLASMA_NOISE = /* glsl */ `
-  float hash(vec2 p) {
-    p=fract(p*vec2(123.34,456.21));
-    p+=dot(p,p+45.32);
-    return fract(p.x*p.y);
-  }
-  float noise(vec2 p) {
-    vec2 cell=floor(p),f=fract(p);
-    f=f*f*(3.0-2.0*f);
-    return mix(mix(hash(cell),hash(cell+vec2(1.0,0.0)),f.x),
-      mix(hash(cell+vec2(0.0,1.0)),hash(cell+vec2(1.0,1.0)),f.x),f.y);
-  }
-  float plasma(vec2 p) {
-    return noise(p)*0.57+noise(p*2.07+17.4)*0.29+noise(p*4.13-8.2)*0.14;
-  }
-`;
-
-export const CORE_FRAGMENT = /* glsl */ `
-  precision highp float;
-  uniform float uActivity;
-  uniform float uAnimation;
-  uniform float uCoronaLayer;
-  varying vec2 vUv;
-  varying vec3 vLocal;
-  varying vec3 vNormal;
-  varying vec3 vView;
-  ${PLASMA_NOISE}
-  void main() {
-    float flow=sqrt(clamp(uActivity,0.0,1.0));
-    float angle=atan(vLocal.y,vLocal.x)-uAnimation*0.18;
-    float radius=length(vLocal.xy);
-    vec2 orbit=vec2(cos(angle),sin(angle));
-    float cloud=plasma(orbit*4.5+vec2(radius*31.0-uAnimation*0.11,uAnimation*0.07));
-    float detail=plasma(orbit*13.0+vec2(radius*80.0+uAnimation*0.08,-uAnimation*0.06));
-    vec3 n=normalize(vNormal)*(gl_FrontFacing?1.0:-1.0);
-    vec3 view=normalize(vView);
-    float facing=max(0.0,dot(n,view));
-    float fresnel=pow(1.0-facing,2.3);
-    float approaching=pow(0.5+0.5*sin(angle+uAnimation*0.18+0.7),2.0);
-    float phase=radius*930.0+cloud*19.0+sin(angle*7.0)*1.7-uAnimation*1.25;
-    float fine=pow(0.5+0.5*sin(phase),18.0);
-    // Preserve integrated filament light when radial strands become subpixel,
-    // instead of letting a distant view turn into a moire pattern.
-    float strands=mix(fine,0.132,clamp(fwidth(phase)/3.14159265,0.0,1.0));
-    float broad=pow(0.5+0.5*sin(radius*270.0+cloud*3.0-angle*1.8),5.0);
-    float boundary=smoothstep(0.224,0.238,radius)*(1.0-smoothstep(0.355,0.397,radius));
-    float streams=(0.32+smoothstep(0.16,0.78,cloud)*0.68)*(0.65+detail*0.35);
-    float density=boundary*streams;
-    float radiance=(0.055+broad*0.24+strands*11.8)*density*(0.95+flow*1.30)*(0.55+approaching*0.90);
-    float heat=clamp((0.395-radius)/0.172*0.7+strands*0.55,0.0,1.0);
-    vec3 color=mix(vec3(1.0,0.32,0.045),vec3(1.55,1.32,0.97),heat);
-    float alpha=(0.012+strands*0.11)*density;
-    if(uCoronaLayer>0.5 && uCoronaLayer<1.5) {
-      // A larger translucent toroidal shell supplies true spatial haze.
-      radiance=(0.004+flow*0.009)*cloud*pow(facing,2.0);
-      color=vec3(0.055,0.21,0.48);
-      alpha=0.001*cloud*pow(facing,2.0);
-    }
-    else if(uCoronaLayer>1.5) {
-      radiance=(2.0+flow*1.6)*(0.6+cloud*0.45)*(0.65+approaching*0.60);
-      color=mix(vec3(1.0,0.57,0.18),vec3(1.45,1.16,0.73),approaching);
-      alpha=0.08;
-    }
-    else {
-      // Empty intervals are genuinely transparent, including depth. The disk
-      // reads as emitted plasma streams rather than a lit opaque brown tube.
-      if(density<0.002)discard;
-    }
-    gl_FragColor=vec4(color*radiance,alpha);
-  }
-`;
-
-export const PHOTON_SHELL_FRAGMENT = /* glsl */ `
-  precision highp float;
-  uniform float uActivity;
-  uniform float uAnimation;
-  varying vec3 vNormal;
-  varying vec3 vView;
-  varying vec3 vLocal;
-  void main() {
-    vec3 n=normalize(vNormal),view=normalize(vView);
-    float rim=pow(1.0-max(0.0,dot(n,view)),24.0);
-    float angle=atan(vLocal.y,vLocal.x);
-    float warmth=0.5+0.5*sin(angle+0.6);
-    float striation=0.85+0.15*sin(angle*13.0-uAnimation*0.65);
-    float emission=rim*striation*(0.82+sqrt(clamp(uActivity,0.0,1.0))*0.95);
-    vec3 color=mix(vec3(1.0,0.51,0.14),vec3(1.35,1.04,0.60),warmth);
-    gl_FragColor=vec4(color*emission,0.0);
   }
 `;

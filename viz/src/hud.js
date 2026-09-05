@@ -23,6 +23,21 @@ const icons = {
 const icon = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[name]}</svg>`;
 const editableTarget = (target) => target instanceof Element && !!target.closest('input, textarea, select, [contenteditable="true"]');
 
+// Presentation keeps unknown derivatives distinct from measured stillness.
+export function formatGestureMotion({ motion, exact, finger, hasXY, source } = {}) {
+  const legacy = exact === false || source === 'legacy';
+  const knownFinger = Number.isInteger(finger) && finger >= 0 && finger <= 65535;
+  const available = !legacy && exact === true && knownFinger && hasXY !== false && motion?.valid === true &&
+    Number.isFinite(motion.speed) && motion.speed >= 0 && Number.isFinite(motion.turn) && motion.turn >= 0;
+  if (!available) return { available: false, speed: 'Mevcut değil', turn: 'Mevcut değil',
+    note: legacy ? 'Eski pakette parmak kimliği yok; hareket ölçümü mevcut değil.' :
+      !knownFinger ? 'Parmak kimliği olmadan hareket ölçümü hesaplanmaz.' : 'Bu örnekte ardışık konumlardan ölçüm alınamıyor.' };
+  return { available: true,
+    speed: `${motion.speed.toLocaleString('tr-TR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} birim/s`,
+    turn: `${(motion.turn * 180 / Math.PI).toLocaleString('tr-TR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} °/s`,
+    note: 'X/Y düzlemi 0–1 birim · seçili olayın ölçümü' };
+}
+
 // The legacy main module provides seat metadata with <b>/<br> formatting.
 // Rebuild this tiny allowlist as DOM nodes; external seat data cannot create
 // links, images, attributes, scripts, or other active content.
@@ -79,7 +94,8 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
     <aside id="legendPanel" class="legend-panel" aria-labelledby="legendTitle" hidden>
       <div class="legend-head"><h2 id="legendTitle">Eseri okumak</h2><button id="closeLegend" aria-label="Eser açıklamasını kapat">${icon('close')}</button></div>
       <p class="legend-intro" id="legendIntro">Kayıtlı hareketlerden oluşan bir çekim alanı.</p>
-      <dl id="nebulaLegend"><div><dt>X ekseni</dt><dd id="legendX">Yörüngenin açısal kıvrımı</dd></div><div><dt>Y ekseni</dt><dd id="legendY">Yörünge yarıçapı ve disk kalınlığı</dd></div><div><dt>İz bağlantısı</dt><dd>Aynı bilinen dokunuşun kayıtlı X/Y noktaları</dd></div><div><dt>Mavi / altın</dt><dd>Işık malzemesi; müzik hattı değildir</dd></div></dl>
+      <dl id="nebulaLegend"><div><dt>X ekseni</dt><dd id="legendX">Yörüngenin açısal kıvrımı</dd></div><div><dt>Y ekseni</dt><dd id="legendY">Yörünge yarıçapı ve disk kalınlığı</dd></div><div><dt>İz bağlantısı</dt><dd>Aynı bilinen dokunuşun kayıtlı X/Y noktaları</dd></div><div><dt>Mavi / altın</dt><dd>Işık malzemesi; müzik hattı değildir</dd></div><div><dt>Hız / dönüş</dt><dd>Hız ışığı ve izleri güçlendirir; yön değişimi bulutların kıvrımını sıklaştırır.</dd></div></dl>
+      <p class="legend-method">Hareket değerleri kayıtlı X/Y’den hesaplanır. Bulutlar ve eğri ışınlarla oluşan çekirdek, bu verilerin sanatsal bir yorumudur.</p>
       <div id="orbitMotionRow" class="orbit-motion-row"><span>Yörünge hareketi</span><button id="orbitMotion" type="button" role="switch" aria-checked="false" aria-label="Yörünge hareketi"><span id="orbitMotionLabel">Kapalı</span><span class="orbit-switch-dot" aria-hidden="true"></span></button><p>Kayıt değerlerini değiştirmeyen görsel hareket.</p></div>
       <div class="legend-tilt" id="legendTiltRow"><label for="tilt">Bakış / eğim</label><output id="tiltValue" for="tilt" aria-hidden="true">0°</output><input id="tilt" type="range" min="-35" max="35" step="1" value="0" aria-valuetext="0 derece"><span>Çekim alanına farklı açılardan bakın.</span></div>
       <button id="cameraJourney" class="camera-journey" aria-pressed="false">${icon('arrow')}<span id="cameraJourneyLabel">Kara deliğe yaklaş</span></button>
@@ -99,6 +115,8 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
       <div id="gestureDetail" class="gesture-detail" hidden>
         <div class="gesture-heading"><span>KAYITLI X/Y</span><span id="gestureActivity">Konum bekleniyor</span></div>
         <div class="gesture-content"><svg class="gesture-pad" viewBox="0 0 100 100" role="img" aria-label="Seçilen katılımcının kaydedilmiş X/Y hareket izi"><path class="gesture-grid" d="M10 10H90V90H10ZM10 50H90M50 10V90"/><path id="gestureTrail" class="gesture-trail" d=""/><circle id="gesturePoint" class="gesture-point" r="2.7" cx="50" cy="50" hidden/><text x="91" y="99">X</text><text x="1" y="8">Y</text></svg><dl class="gesture-values"><div><dt>X</dt><dd id="gestureX">—</dd></div><div><dt>Y</dt><dd id="gestureY">—</dd></div><div><dt>Zaman</dt><dd id="gestureTime">—</dd></div><div><dt>Parmak</dt><dd id="gestureFinger">—</dd></div></dl></div>
+        <dl class="gesture-motion" aria-label="Seçili olayın hareket ölçümleri"><div><dt>Hız</dt><dd id="gestureSpeed">Mevcut değil</dd></div><div><dt title="Ardışık hareket yönleri arasındaki mutlak değişim. İlk doğrultuda veya duruşta sıfır kabul edilir.">Yön değişimi</dt><dd id="gestureTurn">Mevcut değil</dd></div></dl>
+        <div id="gestureMotionNote" class="gesture-accuracy"></div>
         <div id="gestureAccuracy" class="gesture-accuracy"></div>
       </div>
     </aside>
@@ -204,6 +222,8 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
     const d = path.join(' ');
     if ($('gestureTrail').getAttribute('d') !== d) $('gestureTrail').setAttribute('d', d);
     const legacy = exact === false || gestureSummary?.source === 'legacy';
+    const measured = formatGestureMotion({ ...gestureState, hasXY: coordinatePair, source: gestureSummary?.source });
+    write('gestureSpeed', measured.speed); write('gestureTurn', measured.turn); write('gestureMotionNote', measured.note);
     write('gestureAccuracy', legacy ? '16-bit X/Y · eski pakette eksik eksen / dokunuş bilgisi ayırt edilemez.' : exact === true ? gestureSummary?.source === 'demo' ? 'Örnek koordinatlar · en fazla 64 iz noktası' : 'Kayıtlı koordinatlar · en fazla 64 iz noktası' : 'Koordinat kaynağı doğrulanmayı bekliyor.');
     syncInspection();
   };

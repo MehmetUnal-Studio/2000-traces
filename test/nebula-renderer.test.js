@@ -8,6 +8,8 @@ import { createPackFlowEnergy } from '../viz/src/flow-energy.js';
 import { createNebulaSpace } from '../viz/src/nebula-space.js';
 import { projectLens, lensSourceNdc } from '../viz/src/lensing.js';
 import { createDemoPack } from '../viz/src/demo-pack.js';
+import { coreDiskMatrix } from '../viz/src/core-lensing.js';
+import { traceCoreRay } from '../viz/src/core-ray.js';
 
 function fixture({exact=true}={}) {
   const count=18;
@@ -194,27 +196,29 @@ test('live material helpers share activity and animation state even before the f
     assert.equal(uniforms.uHasData.value,0);
     assert.equal(uniforms.uTime.value,0);
     assert.equal(core.isGroup,true);
-    const surfaces=core.children;
-    assert.ok(surfaces.length>=3);
+    const surfaces=[];
+    core.traverse((object)=>{if(object.material)surfaces.push(object);});
+    assert.ok(surfaces.length>0);
     for(const object of [points,haze,lines,...surfaces]) {
       assert.equal(object.material.uniforms.uActivity,uniforms.uActivity);
       assert.equal(object.material.uniforms.uAnimation,uniforms.uAnimation);
     }
     uniforms.uActivity.value=0.42;uniforms.uAnimation.value=2.5;
-    const torus=core.getObjectByName('nebula-accretion-torus');
-    assert.equal(torus.material.uniforms.uActivity.value,0.42);
-    assert.equal(torus.material.uniforms.uAnimation.value,2.5);
-    assert.equal(torus.material.premultipliedAlpha,true,'thin corona adds emission without masking the dust behind it');
+    const surface=core.getObjectByName('nebula-ray-integrated-core');
+    assert.ok(surface,'archive/live core factory uses the same curved world-ray renderer');
+    assert.equal(surface.material.uniforms.uActivity.value,0.42);
+    assert.equal(surface.material.uniforms.uAnimation.value,2.5);
+    assert.equal(surface.material.uniforms.uMotionSpeed,uniforms.uMotionSpeed);
+    assert.equal(surface.material.uniforms.uMotionTurn,uniforms.uMotionTurn);
+    assert.equal(surface.material.uniforms.uMotionCoherence,uniforms.uMotionCoherence);
     core.traverse((object)=>assert.equal(object.layers.mask,2,'all core surfaces belong to the separate core layer'));
-    const horizon=core.getObjectByName('nebula-event-horizon');
-    assert.equal(horizon.geometry.type,'SphereGeometry');
-    assert.equal(horizon.geometry.parameters.radius,NEBULA_CORE_RADIUS);
-    assert.equal(horizon.material.depthWrite,true);
-    assert.equal(torus.geometry.type,'TorusGeometry');
-    torus.geometry.computeBoundingBox();
-    const thickness=torus.geometry.boundingBox.max.z-torus.geometry.boundingBox.min.z;
-    assert.ok(thickness>0.002&&thickness<0.02,'accretion retains real depth while remaining physically thin');
-    assert.equal(torus.material.depthWrite,true);
+    assert.equal(core.userData.horizonRadius,NEBULA_CORE_RADIUS);
+    assert.equal(surface.material.depthWrite,true,'emission writes its actual depth for foreground compositing');
+    const camera=new THREE.PerspectiveCamera(45,1.6,.008,80);
+    camera.position.set(.4,.1,2);camera.lookAt(0,0,0);camera.updateMatrixWorld();
+    surface.onBeforeRender({getCurrentViewport:(v)=>v.set(0,0,1600,1000)},new THREE.Scene(),camera);
+    assert.deepEqual(surface.material.uniforms.uCameraWorld.value.elements,camera.matrixWorld.elements);
+    assert.equal(surface.material.uniforms.uActivity.value,.42,'camera preparation does not overwrite source activity');
   } finally {
     for(const object of [points,haze,lines,core]) object.traverse((child)=>{child.geometry?.dispose();child.material?.dispose();});
   }
@@ -245,7 +249,7 @@ test('archive NDC picking follows camera orbit, dolly and pan without changing e
   const pack=fixture(),nebula=buildNebula(pack);
   try {
     const camera=new THREE.PerspectiveCamera(45,1.6,0.008,80);
-    const ray=new THREE.Raycaster(),sphere=new THREE.Sphere(new THREE.Vector3(),NEBULA_CORE_RADIUS),intersection=new THREE.Vector3();
+    const ray=new THREE.Raycaster();
     let checked=0;
     for(const eye of [[0,0,2.8],[2.2,0.8,1.4],[-1.8,0.6,-1.8]]) {
       camera.position.set(...eye);camera.lookAt(0.06,-0.03,0);camera.updateMatrixWorld();nebula.setCamera(camera,1200);
@@ -258,7 +262,14 @@ test('archive NDC picking follows camera orbit, dolly and pan without changing e
         const screen=displayedNdc(sourceNdc,projectLens(camera),depth);
         if(Math.abs(sourceNdc.x)>1||Math.abs(sourceNdc.y)>1||Math.abs(screen.x)>1||Math.abs(screen.y)>1)continue;
         ray.setFromCamera(new THREE.Vector2(screen.x,screen.y),camera);
-        const blocked=ray.ray.intersectSphere(sphere,intersection)&&intersection.distanceTo(camera.position)<world.distanceTo(camera.position)-0.001;
+        const disk=coreDiskMatrix(nebula.uniforms),inverse=disk.clone().invert();
+        const captured=traceCoreRay(ray.ray.origin.clone().applyMatrix4(inverse).toArray(),ray.ray.direction.clone().transformDirection(inverse).toArray(),{
+          pixelCone:2/(Math.abs(camera.projectionMatrix.elements[5])*1200),animation:nebula.uniforms.uAnimation.value,
+          motionSpeed:nebula.uniforms.uMotionSpeed.value,motionTurn:nebula.uniforms.uMotionTurn.value,motionCoherence:nebula.uniforms.uMotionCoherence.value,
+        });
+        const captureDepth=captured.captured?Math.min(...captured.depthPoints
+          .map((p)=>-new THREE.Vector3(...p).applyMatrix4(disk).applyMatrix4(camera.matrixWorldInverse).z).filter((z)=>z>0)):Infinity;
+        const blocked=depth>=captureDepth-0.0001;
         if(blocked)continue;
         assert.equal(nebula.inspectNdc(screen.x,screen.y)?.index,index);checked++;
       }
@@ -274,7 +285,10 @@ test('lensed arcs select their real background source across camera pan and aspe
     const lens=projectLens(camera);
     const uniforms=createNebulaUniforms(1000);uniforms.uTime.value=1000;
     const context={time:1000,durationMs:1000,orbit:0,tilt:0};
-    const sourceWorld=camera.position.clone().multiplyScalar(-0.3);
+    // This outer image escapes the curved-ray shadow; a perfectly central
+    // source's old thin-lens ring now falls inside the captured annulus.
+    const sourceWorld=camera.position.clone().multiplyScalar(-0.3)
+      .addScaledVector(new THREE.Vector3(1,0,0).transformDirection(camera.matrixWorld),0.2);
     const source=sourceWorld.clone().project(camera);
     const image=displayedNdc(source,lens);
     const remapped=lensSourceNdc(image.x,image.y,lens);

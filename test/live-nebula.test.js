@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createLiveNebula } from '../viz/src/live-nebula.js';
 import { buildNebula, nebulaEventPosition, projectNebulaPoint, NEBULA_CORE_RADIUS } from '../viz/src/nebula.js';
 import { createPackFlowEnergy } from '../viz/src/flow-energy.js';
+import { createPackMotionSignals } from '../viz/src/motion-signals.js';
 import { TYPE } from '../viz/src/pack-loader.js';
 
 const limits = { points: 64, halos: 16, segments: 32 };
@@ -171,4 +172,109 @@ test('live renderer disposal releases every GPU resource exactly once', () => {
   live.dispose(); live.dispose();
   for (const count of resources.values()) assert.equal(count, 1);
   assert.equal(live.sampleLane(0, 200), null);
+});
+
+test('motion attributes and uniforms agree in live/archive geometry, including end-event filaments', () => {
+  const records = [event(0, { k: TYPE.noteOn, u: .1, v: .2 }), event(100, { u: .2, v: .2 }),
+    event(300, { u: .2, v: .4 }), event(400, { k: TYPE.noteOff }), event(600, { u: .3, v: .4 }), event(700, { u: .4, v: .4 })];
+  const source = pack(records); const analysis = createPackMotionSignals(source);
+  const archive = buildNebula(source, undefined, { motionSignals: analysis });
+  const live = createLiveNebula(layout(), { limits });
+  try {
+    for (const record of records) {
+      live.append(0, record); live.updatePlayhead(record.t); archive.updatePlayhead(record.t);
+      for (const name of ['uMotionSpeed', 'uMotionTurn', 'uMotionCoherence', 'uMotionEnergy']) assert.equal(live.uniforms[name].value, archive.uniforms[name].value);
+    }
+    live.commit();
+    for (const [liveName, archiveName, kind] of [
+      ['nebula-live-starlight', 'nebula-actual-event-starlight', 'points'],
+      ['nebula-live-atmosphere', 'nebula-event-atmosphere', 'instances'],
+      ['nebula-live-finger-filaments', 'nebula-recorded-finger-filaments', 'instances'],
+    ]) {
+      const a = live.group.getObjectByName(liveName).geometry, b = archive.group.getObjectByName(archiveName).geometry;
+      const count = kind === 'points' ? a.drawRange.count : a.instanceCount;
+      assert.deepEqual(a.attributes.aMotion.array.slice(0, count * 4), b.attributes.aMotion.array);
+    }
+    const state = archive.motionAt(700);
+    archive.updatePlayhead(50); assert.equal(archive.uniforms.uMotionEnergy.value, 0);
+    archive.updatePlayhead(700); assert.equal(archive.uniforms.uMotionEnergy.value, state.energy);
+    const point = nebulaEventPosition({ lane: 0, t: 700, x: .4, y: .4 }, source.manifest);
+    const projected = projectNebulaPoint(point, { time: 700, durationMs: source.manifest.durationMs });
+    const hit = archive.inspect(projected.x, projected.y);
+    assert.equal(hit.gesture.index, 5); assert.equal(hit.gesture.motion.valid, true);
+    assert.equal(hit.gesture.motion.speed, analysis.attributes.speed[5]);
+    assert.deepEqual(hit.gesture.motion, archive.motionForEvent(5));
+    const liveHit = live.inspect(projected.x, projected.y);
+    assert.deepEqual(liveHit.gesture.motion, hit.gesture.motion);
+  } finally { live.dispose(); archive.dispose(); }
+});
+
+test('sampled archive points, halos and filaments retain the original event motion index', () => {
+  // Exceed the separate 26k note budget so draw index != source index.
+  const records = Array.from({ length: 54000 }, (_, index) => event(index * .1, {
+    k: index % 2 ? TYPE.move : TYPE.noteOn, u: .2 + index % 5 / 10, v: .2 + index % 7 / 10,
+  }));
+  const source = pack(records); const analysis = createPackMotionSignals(source);
+  const archive = buildNebula(source, undefined, { motionSignals: analysis });
+  try {
+    assert.ok(archive.sampledIndices.length < records.length);
+    const sampledSet = new Set(archive.sampledIndices);
+    const omitted = records.findIndex((_, index) => !sampledSet.has(index));
+    assert.ok(omitted >= 0);
+    assert.equal(archive.motionForEvent(omitted).valid, !!analysis.attributes.valid[omitted]);
+    assert.equal(archive.motionForEvent(omitted).speed, analysis.attributes.speed[omitted]);
+    for (const index of [-1, records.length, .5, NaN, null]) assert.equal(archive.motionForEvent(index), null);
+    const a = archive.group.getObjectByName('nebula-actual-event-starlight').geometry.attributes.aMotion.array;
+    const halo = archive.group.getObjectByName('nebula-event-atmosphere').geometry.attributes.aMotion.array;
+    const stride = Math.max(1, Math.ceil(archive.sampledIndices.length / 7000));
+    for (let draw = 0; draw < archive.sampledIndices.length; draw++) {
+      const sourceIndex = archive.sampledIndices[draw];
+      const expected = Float32Array.of(analysis.attributes.speed01[sourceIndex], analysis.attributes.turn01[sourceIndex], analysis.attributes.directionX[sourceIndex], analysis.attributes.directionY[sourceIndex]);
+      assert.deepEqual(a.slice(draw * 4, draw * 4 + 4), expected);
+      if (draw % stride === 0) assert.deepEqual(halo.slice(draw / stride * 4, draw / stride * 4 + 4), expected);
+    }
+    const filament = archive.group.getObjectByName('nebula-recorded-finger-filaments').geometry.attributes.aMotion.array;
+    for (let draw = 0; draw < archive.segmentPairs.length / 2; draw++) {
+      const sourceIndex = archive.segmentPairs[draw * 2 + 1];
+      assert.equal(filament[draw * 4], analysis.attributes.speed01[sourceIndex]);
+      assert.equal(filament[draw * 4 + 3], analysis.attributes.directionY[sourceIndex]);
+    }
+  } finally { archive.dispose(); }
+});
+
+test('live selection follows the explicitly chosen finger and retains release without identity fallback', () => {
+  const live = createLiveNebula(layout(), { limits });
+  try {
+    live.append(0, event(100, { f: 1, u: .1 }));
+    live.append(0, event(200, { f: 2, u: .9 }));
+    assert.equal(live.sampleLane(0, 200).finger, 2);
+    assert.equal(live.sampleLane(0, 200, 1).finger, 1);
+    assert.equal(live.sampleLane(0, 200, 1).x, .1);
+    assert.equal(live.sampleLane(0, 200, 3), null);
+    assert.equal(live.sampleLane(0, 50, 1), null, 'no future sample');
+    live.append(0, event(300, { k: TYPE.noteOff, f: 1 }));
+    assert.equal(live.sampleLane(0, 300, 1).active, false);
+    assert.equal(live.sampleLane(0, 300, 2).active, true);
+    live.append(0, event(400, { f: null }));
+    assert.equal(live.sampleLane(0, 400, null).finger, null);
+    assert.deepEqual(live.sampleLane(0, 400, null).trail, []);
+    live.append(0, event(500, { k: TYPE.disconnect }));
+    assert.equal(live.sampleLane(0, 500, 1), null); assert.equal(live.sampleLane(0, 500, null), null);
+  } finally { live.dispose(); }
+});
+
+test('legacy and unknown-finger geometry always supplies a neutral motion attribute', () => {
+  const source = pack([event(100), event(200, { u: .8 })]);
+  delete source.manifest.gestures; source.gestures = null;
+  const archive = buildNebula(source); const live = createLiveNebula(layout(), { limits });
+  try {
+    live.append(0, event(100, { f: null })); live.append(0, event(200, { f: null, u: .8 })); live.commit();
+    live.updatePlayhead(200);
+    for (const group of [archive.group, live.group]) group.traverse((object) => {
+      const attr = object.geometry?.attributes.aMotion;
+      if (attr) assert.equal(attr.array.some((value) => value !== 0), false);
+    });
+    assert.equal(archive.motionAt(10000).energy, 0); assert.equal(live.motionAt(200).energy, 0);
+    assert.equal(live.sampleLane(0, 200, null).motion.valid, false);
+  } finally { live.dispose(); archive.dispose(); }
 });
