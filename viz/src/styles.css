@@ -224,3 +224,29 @@ noscript { position: fixed; top: 30%; left: 10%; right: 10%; color: var(--ink); 
 .export-download:hover { background: var(--hover); }
 .export-download svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
 @media (max-width: 520px) { .export-preview { width: calc(100vw - 28px); padding: 15px; max-height: 75dvh; } .export-preview[open] { gap: 16px; } .export-preview-head h2 { font-size: 18px; } .export-preview-foot { align-items: flex-start; gap: 12px; } .export-preview-foot p { font-size: 8px; } .export-preview-foot .export-preview-note { font-size: 7px; max-width: 170px; } .export-download { min-height: 36px; font-size: 9px; padding: 7px 10px; gap: 6px; } .export-preview-art img { max-height: 49dvh; } }
+
+body[data-theme="nebula"] { --ground: #03070c; --ink: #e2eaf0; --dim: #a2b6c4; --muted: #8a9da9; --line: rgba(169, 199, 219, .18); --ice: #bbdbe9; --accent: #d5b591; --panel: rgba(8, 17, 25, .96); }
+.gesture-summary { margin-top: 9px; color: var(--muted); font: 7px/1.6 var(--mono); letter-spacing: .02em; }
+.orbit-motion-row { display: grid; grid-template-columns: 1fr auto; gap: 5px 12px; align-items: center; margin-top: 21px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--dim); font-size: 9px; }
+.orbit-motion-row button { min-height: 29px; gap: 9px; padding: 3px 0 3px 8px; color: var(--dim); font-size: 8px; }
+.orbit-switch-dot { width: 21px; height: 12px; border: 1px solid var(--line); border-radius: 8px; position: relative; }
+.orbit-switch-dot::after { content: ""; position: absolute; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); left: 2px; top: 2px; }
+.orbit-motion-row button[aria-checked="true"] .orbit-switch-dot { border-color: var(--ice); }
+.orbit-motion-row button[aria-checked="true"] .orbit-switch-dot::after { left: 11px; background: var(--ice); }
+.orbit-motion-row p { grid-column: 1 / -1; margin: 2px 0 0; font-size: 8px; color: var(--muted); line-height: 1.8; }
+.gesture-detail { border-top: 1px solid var(--line); margin-top: 17px; padding-top: 13px; }
+.gesture-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font: 7px/1.5 var(--mono); letter-spacing: .05em; }
+.gesture-detail[data-active="true"] #gestureActivity { color: var(--ice); }
+.gesture-content { display: grid; grid-template-columns: 100px 1fr; align-items: center; gap: 19px; margin-top: 10px; }
+.gesture-pad { width: 100px; height: 100px; display: block; overflow: visible; }
+.gesture-grid { fill: none; stroke: var(--line); stroke-width: .65; }
+.gesture-trail { fill: none; stroke: var(--ice); stroke-width: 1.15; stroke-linecap: round; stroke-linejoin: round; opacity: .65; }
+.gesture-point { fill: var(--ice); stroke: var(--panel); stroke-width: 1; }
+.gesture-pad text { fill: var(--muted); font: 7px var(--mono); }
+.gesture-values { margin: 0; display: grid; gap: 6px; font: 9px/1.5 var(--mono); font-variant-numeric: tabular-nums; }
+.gesture-values > div { display: flex; justify-content: space-between; gap: 12px; }
+.gesture-values dt { color: var(--muted); }
+.gesture-values dd { color: var(--ink); margin: 0; }
+.gesture-accuracy { color: var(--muted); font-size: 7px; line-height: 1.8; margin-top: 9px; }
+.seat { max-height: calc(100dvh - 250px); overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+@media (max-width: 520px) { .top-actions { gap: 7px; } .view-switch button { padding-left: 6px; padding-right: 6px; } .view-switch button[aria-pressed="true"]::after { left: 6px; right: 6px; } .gesture-summary { font-size: 6px; } .gesture-content { grid-template-columns: 92px 1fr; gap: 23px; } .gesture-pad { width: 92px; height: 92px; } .seat { max-height: calc(100dvh - 235px); } }

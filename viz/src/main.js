@@ -2,6 +2,8 @@
 import { loadPack, EVENT_RECORD_BYTES, TYPE } from './pack-loader.js';
 import { buildLayout } from './layout.js';
 import { buildAtlas } from './atlas.js';
+import { buildNebula } from './nebula.js';
+import { createGestureReplay, readGesture } from './gesture-replay.js';
 import { createLiveDisc, rosterLayout } from './live-disc.js';
 import { createScene } from './scene.js';
 import { createTransport } from './transport.js';
@@ -40,15 +42,19 @@ let live = null;    // record mode: { es, disc, layout, laneOf, maxT, queue, dur
 let recPending = false; // set synchronously on KAYIT click, before any await
 let switchGen = 0;      // invalidates in-flight switchPack loads
 let packAbort = null;
-let viewMode = new URLSearchParams(location.search).get('style') === 'ink' ? 'ink' : 'atlas';
+const requestedStyle = new URLSearchParams(location.search).get('style');
+let viewMode = ['atlas', 'ink'].includes(requestedStyle) ? requestedStyle : 'nebula';
 let playbackSpeed = 1;
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+let orbitMotion = !reducedMotion.matches;
+let orbitPhase = 0;
 
 function rememberArtwork(name = current?.name) {
   if (!name) return;
   const url = new URL(location.href);
   if (name === DEMO_NAME) { url.searchParams.set('demo', '1'); url.searchParams.delete('pack'); }
   else { url.searchParams.set('pack', name); url.searchParams.delete('demo'); }
-  if (viewMode === 'ink') url.searchParams.set('style', 'ink');
+  if (viewMode !== 'nebula') url.searchParams.set('style', viewMode);
   else url.searchParams.delete('style');
   history.replaceState(null, '', url);
 }
@@ -77,19 +83,45 @@ const hud = createHud({
   },
   onFit: () => view.fit(),
   onTilt: (radians) => view.setTilt(radians),
+  onOrbitMotion: (on) => { orbitMotion = on; },
   onFocusMode: (on) => view.setPresentation(on),
   onDeselect: () => (live ? selectLive(null) : select(null)),
   onRecord: () => (live ? stopRecording() : startRecording()),
   onLibrary: () => toggleLibrary(),
   onDemo: () => switchPack(DEMO_NAME),
-  onViewMode: (mode) => {
-    viewMode = mode;
-    current?.disc.setViewMode?.(mode);
-    view.setTheme(mode);
-    hud.setViewMode(mode);
-    rememberArtwork();
-  },
+  onViewMode: changeViewMode,
 });
+hud.setOrbitMotion(orbitMotion);
+reducedMotion.addEventListener('change', (event) => {
+  if (event.matches) { orbitMotion = false; hud.setOrbitMotion(false); }
+});
+
+function buildArtwork(pack, layout, replay, mode) {
+  return mode === 'nebula'
+    ? buildNebula(pack, layout, { replay })
+    : buildAtlas(pack, layout);
+}
+
+function changeViewMode(mode) {
+  if (live || !['nebula', 'atlas', 'ink'].includes(mode)) return;
+  if (current && (mode === 'nebula') !== (viewMode === 'nebula')) {
+    let next;
+    try { next = buildArtwork(current.pack, current.layout, current.replay, mode); }
+    catch (error) { hud.setStats(`Eser oluşturulamadı — ${error.message}`); return; }
+    view.scene.remove(current.disc.group);
+    current.disc.dispose();
+    current.disc = next;
+    view.scene.add(next.group);
+  }
+  viewMode = mode;
+  current?.disc.setViewMode?.(mode);
+  if (current?.disc.uniforms.uTilt) current.disc.uniforms.uTilt.value = view.tilt;
+  view.setTheme(mode);
+  hud.setViewMode(mode);
+  select(null);
+  rememberArtwork();
+  lastRenderStamp = null;
+}
 const syncPacks = (selected) => hud.setPacks(PACKS.map((name) => packEntries.find((p) => p.name === name) ?? name), selected);
 
 canvas.addEventListener('webglcontextlost', (event) => {
@@ -205,9 +237,34 @@ function laneInfo(lane) {
 
 function select(lane) {
   if (!current) return;
-  current.disc.uniforms.uSelLane.value = lane === null ? -1 : lane;
+  current.gestureSelection = lane === null ? null : { lane, finger: undefined, previewTime: null };
+  current.gestureStamp = null;
   current.disc.setInspection?.(null);
+  current.disc.uniforms.uSelLane.value = lane === null ? -1 : lane;
   hud.showSeat(lane === null ? null : laneInfo(lane));
+  syncGesture();
+}
+
+function syncGesture() {
+  if (!current?.gestureSelection) return;
+  const selected = current.gestureSelection;
+  const time = selected.previewTime ?? current.transport.time;
+  const state = current.replay.sampleLane(selected.lane, time, { maxTrailPoints: 64 });
+  let finger = selected.finger === undefined
+    ? state.fingers.find((f) => f.active) ?? state.fingers.at(-1)
+    : state.fingers.find((f) => f.finger === selected.finger);
+  if (selected.previewTime !== null && Number.isInteger(selected.previewIndex)) {
+    const point = readGesture(current.pack, selected.previewIndex);
+    finger = { ...point, active: false,
+      trail: (finger?.trail ?? []).filter((p) => p.t < point.t || (p.t === point.t && p.index <= point.index)) };
+  }
+  const stamp = `${selected.lane}:${finger?.finger}:${finger?.index}:${finger?.active}:${finger?.trail[0]?.index}`;
+  if (current.gestureStamp === stamp) return;
+  current.gestureStamp = stamp;
+  hud.setGestureState({ lane: selected.lane, pid: state.pid, exact: state.exact,
+    hasXY: Boolean(finger), x: finger?.x, y: finger?.y, t: finger?.t,
+    finger: finger?.finger, active: finger?.active ?? false,
+    trail: finger?.finger === null ? [] : finger?.trail ?? [] });
 }
 
 // Live isolation: selection keyed by (z,s), not lane index — a derived→
@@ -239,6 +296,13 @@ view.onCanvasClick((x, y) => {
   select(hit?.lane ?? null);
   current.disc.setInspection?.(hit);
   if (hit) hud.showSeat(hit);
+  if (hit && current.gestureSelection) {
+    current.gestureSelection.finger = hit.gesture?.finger;
+    current.gestureSelection.previewTime = Number.isFinite(hit.gesture?.t) ? hit.gesture.t : null;
+    current.gestureSelection.previewIndex = hit.index;
+    current.gestureStamp = null;
+    syncGesture();
+  }
 });
 
 view.onHover((x, y) => {
@@ -267,7 +331,7 @@ window.addEventListener('keydown', (e) => {
 });
 
 function clearStage() {
-  if (current) { view.scene.remove(current.disc.group); current.disc.dispose(); current = null; }
+  if (current) { view.scene.remove(current.disc.group); current.disc.dispose(); current.replay?.clearCache(); current = null; }
 }
 
 async function switchPack(name, notice = null) {
@@ -296,10 +360,11 @@ async function switchPack(name, notice = null) {
     }
   }
   if (stale()) return; // an overlapping switch/recording won — no GPU built yet
-  let layout; let disc;
+  let layout; let disc; let replay;
   try {
     layout = buildLayout(pack.manifest);
-    disc = buildAtlas(pack, layout);
+    replay = createGestureReplay(pack);
+    disc = buildArtwork(pack, layout, replay, viewMode);
   } catch (err) {
     hud.setLoading(false);
     hud.setStats(`Eser oluşturulamadı — ${err.message}`);
@@ -313,12 +378,14 @@ async function switchPack(name, notice = null) {
   const transport = createTransport(pack.manifest.durationMs);
   transport.setSpeed(playbackSpeed);
   view.scene.add(disc.group);
-  current = { name, pack, layout, disc, transport };
+  current = { name, pack, layout, disc, transport, replay, gestureSelection: null, gestureStamp: null };
+  orbitPhase = 0;
   rememberArtwork(name);
   lastRenderStamp = null;
   hud.setPack(name);
   hud.setDuration(pack.manifest.durationMs);
   hud.setArtwork(pack.manifest, { demo: name === DEMO_NAME });
+  hud.setGestureSummary({ available: true, source: name === DEMO_NAME ? 'demo' : pack.gestures ? 'recorded' : 'legacy' });
   hud.setLoading(false);
   hud.setStats(notice ?? '');
   select(null);
@@ -727,14 +794,32 @@ function frame(now) {
   if (!current) { renderIfChanged('ambient'); return; }
   const { disc, transport, layout } = current;
   transport.tick(dt);
+  const movedTime = transport.time !== disc.uniforms.uTime.value;
   if (transport.time < disc.uniforms.uTime.value) {
     // A previously selected late cell must not disclose future counts after
     // seeking or restarting. Includes keyboard playback from the final state.
-    select(null);
+    if (current.gestureSelection && viewMode === 'nebula') {
+      current.gestureSelection.previewTime = null;
+      const p = current.pack.manifest.participants[current.gestureSelection.lane];
+      hud.showSeat({ title: p.p, meta: 'Kaydedilmiş parmak hareketi · X / Y' });
+      current.gestureStamp = null;
+    } else select(null);
     disc.updateHover?.(null, null);
+  }
+  if (movedTime && current.gestureSelection) {
+    if (current.gestureSelection.previewTime !== null) {
+      const p = current.pack.manifest.participants[current.gestureSelection.lane];
+      hud.showSeat({ title: p.p, meta: 'Kaydedilmiş parmak hareketi · X / Y' });
+      current.gestureStamp = null;
+    }
+    current.gestureSelection.previewTime = null;
   }
   disc.uniforms.uTime.value = transport.time;
   disc.uniforms.uPointScale.value = devicePx;
+  if (disc.uniforms.uOrbit) {
+    if (orbitMotion && !document.hidden) orbitPhase = (orbitPhase + dt * 0.000024) % (Math.PI * 2);
+    disc.uniforms.uOrbit.value = orbitPhase;
+  }
 
   const replaying = transport.time < layout.durationMs;
   disc.uniforms.uReplaying.value = replaying ? 1 : 0;
@@ -742,7 +827,8 @@ function frame(now) {
   disc.updatePlayhead?.(transport.time);
 
   hud.setTime(transport.time, transport.playing);
-  renderIfChanged(`${disc.group.uuid}:${transport.time}:${disc.uniforms.uSelLane.value}:${disc.uniforms.uSelRow?.value}:${disc.uniforms.uSelColumn?.value}:${disc.hoverStamp ?? ''}`);
+  syncGesture();
+  renderIfChanged(`${disc.group.uuid}:${transport.time}:${disc.uniforms.uOrbit?.value ?? 0}:${disc.uniforms.uSelLane.value}:${disc.uniforms.uSelRow?.value}:${disc.uniforms.uSelColumn?.value}:${disc.hoverStamp ?? ''}`);
 }
 
 // Boot: if the recorder is already mid-take, auto-attach through the exact

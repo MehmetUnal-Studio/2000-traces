@@ -21,7 +21,9 @@ export async function exportStill({ renderer, scene, uniforms, playheadMat = nul
     .filter((key) => uniforms[key]).map((key) => [key, uniforms[key].value]);
   for (const [key] of inspection) uniforms[key].value = -1;
   const prevTilt = uniforms.uTilt?.value;
+  const prevOrbit = uniforms.uOrbit?.value;
   if (uniforms.uTilt) uniforms.uTilt.value = 0;
+  if (uniforms.uOrbit) uniforms.uOrbit.value = 0;
   uniforms.uTime.value = uniforms.uDuration.value;
   uniforms.uPointScale.value = size / (extent * 2);
   uniforms.uSelLane.value = -1;
@@ -48,6 +50,7 @@ export async function exportStill({ renderer, scene, uniforms, playheadMat = nul
     uniforms.uPointMax.value = prevMax;
     for (const [key, value] of inspection) uniforms[key].value = value;
     if (uniforms.uTilt) uniforms.uTilt.value = prevTilt;
+    if (uniforms.uOrbit) uniforms.uOrbit.value = prevOrbit;
     if (playheadMat) playheadMat.opacity = prevPlayhead;
   }
 

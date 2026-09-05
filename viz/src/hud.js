@@ -43,11 +43,11 @@ function seatContent(markup) {
   return frag;
 }
 
-export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, onFinal, onRestart, onExport, onFit, onDeselect, onRecord, onLibrary, onDemo, onViewMode, onTilt, onFocusMode } = {}) {
+export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, onFinal, onRestart, onExport, onFit, onDeselect, onRecord, onLibrary, onDemo, onViewMode, onTilt, onFocusMode, onOrbitMotion } = {}) {
   const el = document.createElement('div');
   el.id = 'hud';
-  el.dataset.view = 'atlas';
-  document.body.dataset.theme = 'atlas';
+  el.dataset.view = 'nebula';
+  document.body.dataset.theme = 'nebula';
   el.innerHTML = `
     <header class="panel top">
       <div class="identity" aria-label="2000 TRACES, Cosmic Symphony">
@@ -56,7 +56,7 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
       </div>
       <div class="exhibition-label"><span class="exhibition-index">[ 01 — ∞ ]</span><span>KOLEKTİF SESİN TOPOGRAFYASI</span></div>
       <div class="top-actions">
-        <div class="view-switch" role="group" aria-label="Görselleştirme biçimi"><button id="galaxyView" aria-pressed="true">Atlas</button><button id="recordView" aria-pressed="false">Mürekkep</button></div>
+        <div class="view-switch" role="group" aria-label="Görselleştirme biçimi"><button id="nebulaView" aria-pressed="true">Nebula</button><button id="galaxyView" aria-pressed="false">Atlas</button><button id="recordView" aria-pressed="false">Mürekkep</button></div>
         <button id="libBtn" class="library-toggle" aria-controls="libPanel" aria-expanded="false" aria-label="Kayıt kütüphanesini aç">${icon('library')}<span class="button-label">Arşiv</span></button>
         <button id="focus" class="focus-button" aria-label="Sahne moduna geç, arayüzü gizle" title="Sahne modu · H">${icon('focus')}</button>
       </div>
@@ -70,13 +70,16 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
       <div class="work-name" id="workName">Henüz bir kayıt seçilmedi</div>
       <div class="work-format" id="workFormat">Ses · hareket · zaman</div>
       <div class="metrics" aria-label="Eserin verileri"><div class="metric"><span id="participants" class="metric-number">—</span><span class="metric-label">katılımcı</span></div><div class="metric"><span id="events" class="metric-number">—</span><span class="metric-label">etkileşim</span></div></div>
+      <div id="gestureSummary" class="gesture-summary" hidden></div>
       <button id="demo" class="demo-action">Örnek eseri aç ${icon('arrow')}</button>
     </section>
     <div class="reading-control"><button id="readArtwork" aria-expanded="false" aria-controls="legendPanel">${icon('info')}<span>Eseri oku</span></button></div>
     <aside id="legendPanel" class="legend-panel" aria-labelledby="legendTitle" hidden>
       <div class="legend-head"><h2 id="legendTitle">Eseri okumak</h2><button id="closeLegend" aria-label="Eser açıklamasını kapat">${icon('close')}</button></div>
-      <p class="legend-intro">Tek bir kayıt. İç içe geçen binlerce iz.</p>
-      <dl><div><dt>Yarıçap</dt><dd>Katılımcı grupları</dd></div><div><dt>Hücre açısı</dt><dd>Kayıt boyunca akan zaman</dd></div><div><dt>Bağlantılar</dt><dd>Bir katılımcının ardışık notaları</dd></div><div><dt>Dış çeper</dt><dd>Katılımcı sırası · bireysel aktivite</dd></div></dl>
+      <p class="legend-intro" id="legendIntro">Kayıtlı hareketlerden oluşan bir çekim alanı.</p>
+      <dl id="atlasLegend" hidden><div><dt>Yarıçap</dt><dd>Katılımcı grupları</dd></div><div><dt>Hücre açısı</dt><dd>Kayıt boyunca akan zaman</dd></div><div><dt>Bağlantılar</dt><dd>Bir katılımcının ardışık notaları</dd></div><div><dt>Dış çeper</dt><dd>Katılımcı sırası · bireysel aktivite</dd></div></dl>
+      <dl id="nebulaLegend"><div><dt>X ekseni</dt><dd id="legendX">Yörüngenin açısal kıvrımı</dd></div><div><dt>Y ekseni</dt><dd id="legendY">Yörünge yarıçapı ve disk kalınlığı</dd></div><div><dt>İz bağlantısı</dt><dd>Aynı bilinen dokunuşun kayıtlı X/Y noktaları</dd></div><div><dt>Mavi / altın</dt><dd>Işık malzemesi; müzik hattı değildir</dd></div></dl>
+      <div id="orbitMotionRow" class="orbit-motion-row"><span>Yörünge hareketi</span><button id="orbitMotion" type="button" role="switch" aria-checked="false" aria-label="Yörünge hareketi"><span id="orbitMotionLabel">Kapalı</span><span class="orbit-switch-dot" aria-hidden="true"></span></button><p>Kayıt değerlerini değiştirmeyen görsel hareket.</p></div>
       <div class="legend-tilt" id="legendTiltRow"><label for="tilt">Kabartı / eğim</label><output id="tiltValue" for="tilt" aria-hidden="true">0°</output><input id="tilt" type="range" min="-35" max="35" step="1" value="0" aria-valuetext="0 derece"><span>Kabartıyı farklı açılardan inceleyin.</span></div>
       <p class="legend-foot">Bir ize dokunarak katılımcıyı seçin.<br>Sürükleyin, yakınlaşın, ayrıntıları keşfedin.<br><span class="desktop-help">Shift + sürükle · eğ / F · görünümü sıfırla</span></p>
     </aside>
@@ -90,6 +93,11 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
     </section>
     <aside class="panel seat" id="seatPanel" aria-label="Seçilen veri" hidden>
       <div class="seat-head"><div><div class="drawer-eyebrow">SEÇİLİ VERİ</div><div class="pid" id="selPid"></div></div><button id="deselect" aria-label="Veri seçimini kapat" title="Seçimi kaldır · Esc">${icon('close')}</button></div><div id="selMeta" class="seat-meta"></div>
+      <div id="gestureDetail" class="gesture-detail" hidden>
+        <div class="gesture-heading"><span>KAYITLI X/Y</span><span id="gestureActivity">Konum bekleniyor</span></div>
+        <div class="gesture-content"><svg class="gesture-pad" viewBox="0 0 100 100" role="img" aria-label="Seçilen katılımcının kaydedilmiş X/Y hareket izi"><path class="gesture-grid" d="M10 10H90V90H10ZM10 50H90M50 10V90"/><path id="gestureTrail" class="gesture-trail" d=""/><circle id="gesturePoint" class="gesture-point" r="2.7" cx="50" cy="50" hidden/><text x="91" y="99">X</text><text x="1" y="8">Y</text></svg><dl class="gesture-values"><div><dt>X</dt><dd id="gestureX">—</dd></div><div><dt>Y</dt><dd id="gestureY">—</dd></div><div><dt>Zaman</dt><dd id="gestureTime">—</dd></div><div><dt>Parmak</dt><dd id="gestureFinger">—</dd></div></dl></div>
+        <div id="gestureAccuracy" class="gesture-accuracy"></div>
+      </div>
     </aside>
     <nav class="panel transport" aria-label="Eser oynatma denetimleri">
       <div class="record-control"><button id="rec" class="rec" title="Canlı akıştan 90 saniye kaydet" aria-label="Canlı kayıt başlat"><span class="record-dot" aria-hidden="true"></span><span class="rec-label" id="recLabel">Canlı kayıt</span></button></div>
@@ -101,7 +109,7 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
     <dialog id="exportPreview" class="export-preview" aria-labelledby="exportPreviewTitle" aria-describedby="exportPreviewMeta">
       <header class="export-preview-head"><div><div class="drawer-eyebrow">2000 TRACES / BASKI</div><h2 id="exportPreviewTitle">Eserin son hâli</h2></div><button id="closeExportPreview" aria-label="Eser önizlemesini kapat" autofocus>${icon('close')}</button></header>
       <div class="export-preview-art"><img id="exportPreviewImage" alt="4K eser önizlemesi"></div>
-      <footer class="export-preview-foot"><div><p id="exportPreviewMeta"></p><p class="export-preview-note">Tam kayıt · düz görünüm · seçim vurgusu içermez</p></div><a id="exportDownload" class="export-download">${icon('export')}<span>PNG'yi indir</span></a></footer>
+      <footer class="export-preview-foot"><div><p id="exportPreviewMeta"></p><p id="exportPreviewNote" class="export-preview-note">Tam kayıt · standart bakış · seçim vurgusu içermez</p></div><a id="exportDownload" class="export-download">${icon('export')}<span>PNG'yi indir</span></a></footer>
     </dialog>
     <div id="announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
   `;
@@ -122,6 +130,10 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
   let knownPacks = [];
   let libraryHandlers = {};
   let libraryReturnFocus = null;
+  let seatInfo = null;
+  let gestureState = null;
+  let gestureSummary = null;
+  let orbitMotion = false;
   const deleteTimers = new Set();
   const write = (id, value) => { const text = String(value ?? ''); if ($(id).textContent !== text) $(id).textContent = text; };
   const announce = (value) => write('announcement', value);
@@ -140,9 +152,70 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
     $('export').disabled = liveMode || !hasArtwork || exportPending || loading;
     $('pack').disabled = liveMode;
     $('demo').disabled = liveMode || loading;
+    $('nebulaView').disabled = liveMode;
     $('galaxyView').disabled = liveMode;
     $('recordView').disabled = liveMode;
     $('tilt').disabled = liveMode;
+    $('orbitMotion').disabled = liveMode;
+  };
+  const validAxis = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+  const syncInspection = () => {
+    $('seatPanel').hidden = !seatInfo && !gestureState;
+    $('gestureDetail').hidden = !gestureState;
+    if (seatInfo) {
+      write('selPid', seatInfo.title);
+    } else if (gestureState) {
+      write('selPid', gestureState.pid ?? (Number.isInteger(gestureState.lane) ? `Katılımcı ${gestureState.lane + 1}` : 'Seçilen hareket'));
+      write('selMeta', 'Kayıt hareketinin yeniden oynatımı');
+    }
+  };
+  const setGestureState = (state) => {
+    gestureState = state && typeof state === 'object' ? state : null;
+    if (!gestureState) {
+      $('gesturePoint').setAttribute('hidden', ''); $('gestureTrail').setAttribute('d', '');
+      syncInspection(); return;
+    }
+    const { x, y, t, active, exact, finger, hasXY, trail } = gestureState;
+    const xValid = validAxis(x); const yValid = validAxis(y);
+    const coordinatePair = hasXY !== false && xValid && yValid;
+    write('gestureX', xValid ? x.toFixed(3) : '—');
+    $('gestureX').title = xValid ? String(x) : '';
+    write('gestureY', yValid ? y.toFixed(3) : '—');
+    $('gestureY').title = yValid ? String(y) : '';
+    write('gestureTime', typeof t === 'number' && Number.isFinite(t) ? `${(Math.max(0, t) / 1000).toFixed(2)} s` : '—');
+    write('gestureFinger', Number.isInteger(finger) ? String(finger) : '—');
+    write('gestureActivity', !coordinatePair ? 'X/Y mevcut değil' : active ? 'Jest sürüyor' : 'Son kayıtlı konum');
+    $('gestureDetail').dataset.active = String(!!active && coordinatePair);
+    $('gesturePoint').toggleAttribute('hidden', !coordinatePair);
+    if (coordinatePair) {
+      $('gesturePoint').setAttribute('cx', String(10 + x * 80));
+      $('gesturePoint').setAttribute('cy', String(90 - y * 80));
+    }
+    let connected = false;
+    const path = [];
+    for (const point of Array.isArray(trail) ? trail.slice(-64) : []) {
+      if (!validAxis(point?.x) || !validAxis(point?.y) || point.hasXY === false) { connected = false; continue; }
+      path.push(`${connected ? 'L' : 'M'}${(10 + point.x * 80).toFixed(2)},${(90 - point.y * 80).toFixed(2)}`);
+      connected = true;
+    }
+    const d = path.join(' ');
+    if ($('gestureTrail').getAttribute('d') !== d) $('gestureTrail').setAttribute('d', d);
+    const legacy = exact === false || gestureSummary?.source === 'legacy';
+    write('gestureAccuracy', legacy ? '16-bit X/Y · eski pakette eksik eksen / dokunuş bilgisi ayırt edilemez.' : exact === true ? gestureSummary?.source === 'demo' ? 'Örnek koordinatlar · en fazla 64 iz noktası' : 'Kayıtlı koordinatlar · en fazla 64 iz noktası' : 'Koordinat kaynağı doğrulanmayı bekliyor.');
+    syncInspection();
+  };
+  const setGestureSummary = (summary) => {
+    gestureSummary = summary && typeof summary === 'object' ? summary : null;
+    $('gestureSummary').hidden = !gestureSummary;
+    if (!gestureSummary) return;
+    const labels = { recorded: 'X/Y kayıt mevcut', legacy: 'Eski paket · 16-bit X/Y', demo: 'Örnek X/Y verisi' };
+    write('gestureSummary', summary.label || (summary.available === false ? 'Bu kayıtta X/Y mevcut değil' : labels[summary.source] || 'X/Y kaynağı doğrulanıyor'));
+    if (gestureState) setGestureState(gestureState);
+  };
+  const setOrbitMotion = (on) => {
+    orbitMotion = !!on;
+    $('orbitMotion').setAttribute('aria-checked', String(orbitMotion));
+    write('orbitMotionLabel', orbitMotion ? 'Açık' : 'Kapalı');
   };
   const setStats = (value) => {
     const text = String(value ?? '');
@@ -187,6 +260,7 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
     $('exportDownload').download = result.filename || '2000-traces-4096px.png';
     const megabytes = (Number(result.bytes || 0) / 1048576).toLocaleString('tr-TR', { maximumFractionDigits: 1 });
     write('exportPreviewMeta', `${result.width} × ${result.height} px · PNG · ${megabytes} MB`);
+    write('exportPreviewNote', theme === 'nebula' ? 'Tam kayıt · standart bakış · seçim vurgusu içermez' : 'Tam kayıt · düz görünüm · seçim vurgusu içermez');
     try {
       await $('exportPreviewImage').decode();
       if (previewUrl !== expectedUrl) return;
@@ -231,6 +305,8 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
   click('closeLibrary', () => setLibraryOpen(false));
   click('closeExportPreview', () => closeExportPreview());
   click('demo', onDemo);
+  click('nebulaView', () => onViewMode?.('nebula'));
+  click('orbitMotion', () => { setOrbitMotion(!orbitMotion); run(onOrbitMotion, orbitMotion); });
   click('galaxyView', () => onViewMode?.('atlas')); click('recordView', () => onViewMode?.('ink'));
   click('readArtwork', () => setLegendOpen($('legendPanel').hidden));
   click('closeLegend', () => setLegendOpen(false));
@@ -252,6 +328,8 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
     catch (error) { setExportState('error', `Görsel kaydedilemedi: ${error?.message ?? error}`); }
   });
   $('demo').hidden = !onDemo;
+  $('nebulaView').hidden = !onViewMode;
+  $('orbitMotionRow').hidden = !onOrbitMotion;
   $('galaxyView').hidden = !onViewMode;
   $('recordView').hidden = !onViewMode;
 
@@ -398,6 +476,7 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
     setArtwork(manifest, { demo = false } = {}) {
       if (!manifest) return this.setEmpty();
       hasArtwork = true;
+      seatInfo = null; setGestureState(null); setGestureSummary(null);
       const selectedPack = knownPacks.find((pack) => pack.name === $('pack').value);
       if (!liveMode && !demo && selectedPack && manifest.label) selectedPack.label = manifest.label;
       const simulated = demo || manifest.simulated === true;
@@ -414,17 +493,23 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
     setLoading(on, label) { loading = !!on; el.dataset.loading = String(loading); $('loading').hidden = !loading; write('loadingLabel', label || 'Eser yükleniyor'); syncDisabled(); },
     setConnection,
     setEmpty(message) {
-      hasArtwork = false; write('participants', '—'); write('events', '—'); write('workKicker', 'Kolektif arşiv'); write('workName', 'İlk iz için hazır'); write('workFormat', 'Ses · hareket · zaman');
+      hasArtwork = false; seatInfo = null; setGestureState(null); setGestureSummary(null); write('participants', '—'); write('events', '—'); write('workKicker', 'Kolektif arşiv'); write('workName', 'İlk iz için hazır'); write('workFormat', 'Ses · hareket · zaman');
       $('demo').hidden = !onDemo; setStats(message || 'Arşivden bir eser seçin veya örnek eseri keşfedin.'); setConnection('offline'); syncDisabled();
     },
     setViewMode(mode) {
       el.dataset.view = mode;
-      document.body.dataset.theme = mode === 'ink' ? 'ink' : 'atlas';
+      document.body.dataset.theme = mode === 'ink' ? 'ink' : mode === 'nebula' ? 'nebula' : 'atlas';
+      $('nebulaView').setAttribute('aria-pressed', String(mode === 'nebula'));
       $('galaxyView').setAttribute('aria-pressed', String(mode === 'atlas' || mode === 'galaxy'));
       $('recordView').setAttribute('aria-pressed', String(mode === 'ink'));
+      $('nebulaLegend').hidden = mode !== 'nebula';
+      $('atlasLegend').hidden = mode === 'nebula';
+      $('orbitMotionRow').hidden = mode !== 'nebula' || !onOrbitMotion;
       $('readArtwork').hidden = mode === 'record';
+      write('legendIntro', mode === 'nebula' ? 'Kayıtlı hareketlerden oluşan bir çekim alanı.' : 'Tek bir kayıt. İç içe geçen binlerce iz.');
       if (mode === 'record') setLegendOpen(false);
     },
+    setGestureState, setGestureSummary, setOrbitMotion,
     setExportState,
     setTilt(radians) {
       const degrees = Math.max(-35, Math.min(35, Math.round((Number(radians) || 0) * 180 / Math.PI)));
@@ -440,14 +525,19 @@ export function createHud({ packs = [], onPack, onPlayPause, onSeek, onSpeed, on
     },
     setLiveMode(on) {
       liveMode = !!on; el.dataset.live = String(liveMode);
-      if (on) { write('workKicker', 'Canlı kayıt'); write('workName', 'Birlikte oluşan bir an'); write('workFormat', 'Katılımcılardan gelen canlı izler'); setConnection('live'); }
+      if (on) { seatInfo = null; setGestureState(null); setGestureSummary(null); write('workKicker', 'Canlı kayıt'); write('workName', 'Birlikte oluşan bir an'); write('workFormat', 'Katılımcılardan gelen canlı izler'); setConnection('live'); }
       else if ($('connection').dataset.state === 'live') setConnection('ready');
       syncDisabled(); if (libraryModel && !$('libPanel').hidden) drawLibrary();
     },
     isLibraryOpen: () => !$('libPanel').hidden,
     setLibraryOpen,
     renderLibrary(model, handlers = {}) { libraryModel = model; libraryHandlers = handlers; drawLibrary(); },
-    showSeat(info) { $('seatPanel').hidden = !info; if (info) { setLegendOpen(false); write('selPid', info.title); $('selMeta').replaceChildren(seatContent(info.meta)); } },
+    showSeat(info) {
+      seatInfo = info;
+      if (!info) setGestureState(null);
+      else { setLegendOpen(false); write('selPid', info.title); $('selMeta').replaceChildren(seatContent(info.meta)); }
+      syncInspection();
+    },
     labelLayer,
   };
 }

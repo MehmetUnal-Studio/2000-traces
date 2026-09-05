@@ -2,9 +2,32 @@
 
 Local acceptance on 2026-09-05, Node 22.14.0 / macOS.
 
+## Nebula and X/Y revision
+
+The same-day Nebula revision adds source-coordinate preservation and gesture
+replay. [The independent X/Y audit](XY-VALIDATION.md) compares all 375,112 accepted
+events from a 260-participant synthetic load test against the new sidecar, with
+zero timestamp/axis/finger mismatches. This is generated load, not human-phone
+multitouch evidence.
+
+Additional browser acceptance used that pack in Nebula: a selected K16 event at
+63.890 seconds showed X 0.389 and Y 0.557, matching JSONL. Playback from the start
+showed its recorded 0.200-second position X 0.600 / Y 0.031. Seeking back to zero
+cleared the future coordinates; initial-event metadata changed to replay metadata
+when transport resumed. The cloud, point selection, orbital-motion switch, tilted
+view, Atlas transition, 390 × 844 layout and full 4096 × 4096 Nebula PNG preview
+were checked. No shader/WebGL errors were observed. Export fixes the ambient
+orbit phase and restores it afterward.
+
+Read-only observation of the existing UDP bridge at `127.0.0.1:8686/api` showed
+separate `/finger0/u` and `/finger0/v` messages received on its port 6061 path.
+The recorder continues to use its direct server SSE source. Its idle local
+process was restarted to load the new packer; musical routes were unchanged.
+UDP transmission from recorded replay is outside this revision.
+
 ## Automated checks
 
-`npm run check` passed all 108 local tests and the Vite production build. CI runs
+`npm run check` runs all local tests and the Vite production build. CI runs
 this command on Node 22 and 24; the private local capture acceptance fixture is
 skipped when absent in CI.
 
@@ -27,7 +50,7 @@ Cell and participant totals independently matched source counts. These timings
 measure CPU summary construction on this machine, not GPU frame rate or a venue
 performance guarantee.
 
-## Browser checks
+## Earlier Atlas browser checks
 
 The Codex in-app browser was used for:
 
@@ -46,12 +69,12 @@ The Codex in-app browser was used for:
   is controlled by the browser and is not assumed by this verification.
 - Browser console checked for shader/WebGL errors; none observed in these checks.
 
-No new live recording was started for this art revision. Raw sessions, local
-packs, recorder state and musical routing were not modified. Live event delivery
-and audible performance acceptance are separate from these viewer checks.
+The earlier Atlas checks used existing packs. The later Nebula capture and
+repack are described above; existing raw takes and musical routing were preserved.
+Audible performance acceptance is separate from these viewer checks.
 
 Production output excludes private local packs. Vite reports an approximately
-800 kB uncompressed main chunk (about 213 kB gzip), largely including Three.js.
+830 kB uncompressed main chunk (about 223 kB gzip), largely including Three.js.
 
 ## Repeat
 

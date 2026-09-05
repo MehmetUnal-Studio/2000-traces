@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createDemoPack } from '../viz/src/demo-pack.js';
-import { loadPack, validateManifest, EVENT_RECORD_BYTES, TYPE } from '../viz/src/pack-loader.js';
+import { loadPack, validateManifest, EVENT_RECORD_BYTES, GESTURE_RECORD_BYTES, TYPE } from '../viz/src/pack-loader.js';
 
 test('exhibition demo is deterministic and has a truthful, self-contained lane table', () => {
   const a = createDemoPack();
@@ -56,4 +56,31 @@ test('pack loading checks binary length and propagates cancellation to every fet
   await assert.rejects(loadPack('take 1', null, { signal: controller.signal }), /strokes.bin/);
   assert.equal(requests.length, 3);
   assert.ok(requests.every((r) => r.signal === controller.signal && r.url.startsWith('/packs/take%201/')));
+});
+
+test('optional precise sidecar is validated, fetched with cancellation, and never silently downgraded', async (t) => {
+  const pack = createDemoPack({ laneCount: 2 });
+  pack.manifest.gestures = { formatVersion: 1, file: 'gestures.bin', recordBytes: GESTURE_RECORD_BYTES, count: pack.manifest.eventCount };
+  for (const gestures of [
+    { ...pack.manifest.gestures, file: '../private.bin' },
+    { ...pack.manifest.gestures, formatVersion: 2 },
+    { ...pack.manifest.gestures, recordBytes: 24 },
+    { ...pack.manifest.gestures, count: 0 },
+  ]) assert.throws(() => validateManifest({ ...pack.manifest, gestures }), /hareket verisi/);
+  const controller = new AbortController();
+  const requests = [];
+  let broken = false;
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    requests.push({ url, signal: options.signal });
+    if (url.endsWith('manifest.json')) return new Response(JSON.stringify(pack.manifest));
+    if (url.endsWith('events.bin')) return new Response(pack.events.buffer);
+    if (url.endsWith('strokes.bin')) return new Response(pack.strokes.buffer);
+    return new Response(new ArrayBuffer(broken ? 0 : pack.manifest.eventCount * GESTURE_RECORD_BYTES));
+  });
+  const loaded = await loadPack('precise-take', null, { signal: controller.signal });
+  assert.ok(loaded.gestures instanceof DataView);
+  assert.equal(requests.length, 4);
+  assert.ok(requests.every((request) => request.signal === controller.signal));
+  broken = true;
+  await assert.rejects(loadPack('precise-take'), /gestures.bin/);
 });

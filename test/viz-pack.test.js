@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { recordFromSource } from '../src/recorder.js';
 import { fileSource } from '../src/sources/file-source.js';
-import { packSession, EVENT_RECORD_BYTES, STROKE_RECORD_BYTES, TYPE_CODES } from '../src/viz-pack.js';
+import { packSession, EVENT_RECORD_BYTES, STROKE_RECORD_BYTES, GESTURE_RECORD_BYTES, TYPE_CODES } from '../src/viz-pack.js';
 
 const FIXTURE = new URL('../captures/fixture-small.sse.txt', import.meta.url).pathname;
 
@@ -28,6 +28,48 @@ test('label rides from session header into manifest and the packs index entry', 
   const index = JSON.parse(readFileSync(join(dir, 'index.json'), 'utf8'));
   const entry = index.packs.find((p) => p.sessionId === 'pack-label');
   assert.equal(entry.label, 'prova 1');
+});
+
+test('phone XY and finger survive capture and precise sidecar without changing the legacy event layout', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'traces-gesture-pack-'));
+  const raw = [
+    { t: 1, z: 0, s: 1, f: 7, l: 3, uu: .12345678901234568, vv: .9876543210987654, ts: 1000.125 },
+    { t: 3, z: 0, s: 1, f: 7, uu: .1111111111111111, vv: .2222222222222222, ts: 1001.75 },
+    { t: 2, z: 0, s: 1, f: 7, l: 3, ts: 1003.5 },
+    { t: 1, z: 0, s: 1, f: 1, l: 4, uu: 0, vv: 0, ts: 1004.125 },
+    { t: -1, z: 0, s: 1, ts: 1005.125 },
+  ];
+  async function* source() { for (const event of raw) yield { raw: event, arrivalMs: event.ts }; }
+  const out = join(dir, 'session.jsonl');
+  await recordFromSource(source(), { outPath: out, sessionId: 'exact-phone', visualSeed: 7, source: 'fixture' });
+  const records = readFileSync(out, 'utf8').split('\n').filter(Boolean).map(JSON.parse).filter((r) => r.kind === 'event');
+  for (let i = 0; i < raw.length; i++) {
+    assert.deepEqual(records[i].raw, raw[i]);
+    assert.equal(records[i].u, raw[i].uu);
+    assert.equal(records[i].v, raw[i].vv);
+    assert.equal(records[i].finger, raw[i].f);
+  }
+  const outDir = join(dir, 'pack');
+  const manifest = await packSession(out, outDir);
+  assert.deepEqual(manifest.gestures, { formatVersion: 1, file: 'gestures.bin', recordBytes: 32, count: raw.length });
+  const legacy = readFileSync(join(outDir, 'events.bin'));
+  const gestures = readFileSync(join(outDir, 'gestures.bin'));
+  assert.equal(legacy.length, raw.length * EVENT_RECORD_BYTES);
+  assert.equal(gestures.length, raw.length * GESTURE_RECORD_BYTES);
+  for (let i = 0; i < raw.length; i++) {
+    const base = i * GESTURE_RECORD_BYTES;
+    assert.equal(gestures.readDoubleLE(base), raw[i].ts - raw[0].ts);
+    for (const [field, offset] of [['uu', 8], ['vv', 16], ['f', 24]]) {
+      const value = gestures.readDoubleLE(base + offset);
+      if (raw[i][field] === undefined) assert.equal(Number.isNaN(value), true);
+      else assert.equal(value, raw[i][field]);
+    }
+  }
+  assert.equal(gestures.readDoubleLE(GESTURE_RECORD_BYTES), 1.625, 'fractional source-relative time remains exact');
+  assert.equal(legacy.readUInt32LE(EVENT_RECORD_BYTES + 6), 2, 'legacy uint32 compatibility is retained');
+  const second = join(dir, 'pack-again');
+  await packSession(out, second);
+  assert.deepEqual(readFileSync(join(second, 'gestures.bin')), gestures, 'sidecar bytes are deterministic');
 });
 
 test('packs a session into manifest + events.bin + strokes.bin', async () => {

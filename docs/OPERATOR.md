@@ -61,13 +61,14 @@ Panel durumunu yaklaşık saniyede bir, arşivi beş saniyede bir yeniler. Bağl
 
 ## 4. Görselleştirici
 
+- **Nebula** kayıtlı X/Y hareketlerini bir sarmal çekim alanında yeniden gösterir. Seçilen izin koordinatları, olay zamanı ve varsa dokunuş kimliği inceleme panelinde görünür. **Yörünge hareketi** görsel bir hareket seçeneğidir; yeni canlı veri alındığını belirtmez.
 - **Atlas / Mürekkep** aynı veri geometrisinin ışıklı ve tek renk baskı yorumlarıdır. Hücreler katılımcı gruplarını ve zaman aralıklarını özetler; dış çubuklar bireysel katılımcıları gösterir. Ayrıntılı eşlemeler [Eseri okumak](ARTWORK.md) belgesindedir.
 - Oynatma, zaman çizelgesi ve hız kontrolü kayıtların zaman içindeki gelişimini gösterir.
 - Bir hücreye tıklayarak zaman diliminin sayımlarını, dış çubuktan katılımcı bilgilerini inceleyin. Tekerlek veya iki parmakla yakınlaşın; sürükleyerek kaydırın. **Eseri oku → Kabartı / eğim** ya da Shift + dikey sürükleme yüzeyi eğer. **F** görünümü sıfırlar. **Esc** veya boş alana tıklamak seçimi temizler; geri sarma da gelecekteki verinin seçimini temizler.
 - **Sahne modu** arayüzü gizler; **H** veya arayüzü göster düğmesi geri getirir.
-- **Görseli kaydet** eserin tamamlanmış, düz hâlini 4096 × 4096 PNG önizlemesi olarak hazırlar. Önizlemedeki **PNG'yi indir** bağlantısı dosyayı kaydeder. Çıktı kamera konumu, eğim, arayüz ve seçim vurgularını içermez.
+- **Görseli kaydet** eserin tamamlanmış hâlini 4096 × 4096 PNG önizlemesi olarak hazırlar. Önizlemedeki **PNG'yi indir** bağlantısı dosyayı kaydeder. Çıktı kullanıcının kamera konumunu, ek eğimini, arayüzü ve seçim vurgularını içermez; Nebula standart eğik bakışını korur, Atlas / Mürekkep düz gösterilir.
 
-Görselleştiricinin **Canlı kayıt** kontrolü aynı kayıt API'sini kullanır. Önce sunucu durumu okunur, yerel canlı SSE bağlantısı açılır, ardından arm/start akışı çalışır. Mevcut eser, sunucudan `RECORDING` onayı gelmeden kaldırılmaz. Sade ana adres açıldığında sunucuda zaten kayıt sürüyorsa görselleştirici o kayda katılır; ikinci bir kayıt başlatmaz. `?pack=...` ve `?demo=1` bağlantıları belirtilen arşiv/örnek eseri açar. Seçilen eser ve Atlas/Mürekkep tercihi URL'de korunur.
+Görselleştiricinin **Canlı kayıt** kontrolü aynı kayıt API'sini kullanır. Önce sunucu durumu okunur, yerel canlı SSE bağlantısı açılır, ardından arm/start akışı çalışır. Mevcut eser, sunucudan `RECORDING` onayı gelmeden kaldırılmaz. Sade ana adres açıldığında sunucuda zaten kayıt sürüyorsa görselleştirici o kayda katılır; ikinci bir kayıt başlatmaz. `?pack=...` ve `?demo=1` bağlantıları belirtilen arşiv/örnek eseri açar. Seçilen eser ve Nebula/Atlas/Mürekkep tercihi URL'de korunur.
 
 Boşluk tuşu kaydı durdurmaz; oynatma kontrolleri arşiv içindir. Kayıt kontrolü klavyeyle odaklandığında Enter, düğmenin normal başlat/durdur eylemini uygular. Kayıt bittiğinde paketleme durumu görünür ve oluşan pakete geçilir. Paket yükleme başarısızsa hata görünür; önceki açılmış eser korunur.
 
@@ -88,7 +89,7 @@ Görselleştiricinin **Kütüphane** panelinde:
 npm run viz:pack -- sessions/<oturum>.jsonl viz/public/packs/<paket>
 ```
 
-Paketleyici `manifest.json`, ikili veri dosyaları ve `index.json` üretir. Dizin düzeyindeki index atomik yazılır. Görselleştiricide paket görünmüyorsa `sessions/<oturum>.jsonl → viz/public/packs/<paket>/manifest.json → viz/public/packs/index.json` zincirini kontrol edin. Yeni paketler için Vite'ı yeniden başlatmak gerekmez.
+Paketleyici `manifest.json`, ikili veri dosyaları ve `index.json` üretir. Yeni paketlerde `gestures.bin`, olaylarla aynı sırada X/Y, zaman ve dokunuş kimliğini korur; eksik alanlar eksik kalır. Eski paketlerdeki 16-bit U/V okunabilir, ancak kaybolmuş dokunuş / eksik-alan bilgisi paketten geri çıkarılamaz. Ham JSONL bu alanları içeriyorsa yukarıdaki komutla yeniden paketlemek ayrıntılı hareket yan dosyasını üretir; ham kaydı değiştirmez. Dizin düzeyindeki index atomik yazılır. Görselleştiricide paket görünmüyorsa `sessions/<oturum>.jsonl → viz/public/packs/<paket>/manifest.json → viz/public/packs/index.json` zincirini kontrol edin. Yeni paketler için Vite'ı yeniden başlatmak gerekmez.
 
 ## 6. Veri ve işletim sınırları
 

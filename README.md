@@ -2,7 +2,7 @@
 
 A collective memory of a performance. Audience gestures become a circular, explorable data artwork.
 
-2000 TRACES records a bounded audience-event stream, preserves it as JSONL, and turns each session into a deterministic Three.js artwork. The viewer presents a dense circular atlas in luminous and ink editions, with data inspection, participant isolation, playback, an archive, and 4K PNG export. The separate operator desk keeps recording controls and session health visible.
+2000 TRACES records a bounded audience-event stream, preserves it as JSONL, and turns each session into a deterministic Three.js / GLSL artwork. The default **Nebula** winds recorded phone X/Y gestures around a dark core, with smoky blue and amber filaments, depth and orbital movement. **Atlas** and **Mürekkep** retain the circular data and ink editions. All three support inspection, participant isolation, playback, an archive and 4K PNG export. The separate operator desk keeps recording controls and session health visible.
 
 ## Explore locally
 
@@ -15,7 +15,7 @@ npm run viz
 
 Open [the example artwork](http://127.0.0.1:5174/?demo=1). It uses a deterministic, synthetic 90-second session with 2,000 participants; it does not start a recording or write session files. The default viewer opens the example when no saved packs exist.
 
-The artwork combines concentric activity cells, individual participant marks, and a bounded selection of recorded note transitions. Activity controls visual density; musical colors come only from note beginnings, while motion-only activity remains visible in neutral tones. **Atlas** and **Mürekkep** use the same geometry in different palettes. Read [how to explore and interpret the artwork](docs/ARTWORK.md) for the data mapping, controls, and aggregation limits.
+In Nebula, X bends an orbit and Y changes its radius and thickness. Known fingers create paths through their actual recorded coordinates; gaps and releases break those paths. The X/Y inspector replays the source independently of the bounded GPU sample. New packs preserve full JavaScript-number precision, timestamps, missing values and finger identity in `gestures.bin`; legacy 16-bit packs remain readable. Raw JSONL can be repacked to recover fields the older visual binary omitted. Read [how to explore and interpret the artwork](docs/ARTWORK.md) for all three mappings, controls and limits, and [the X/Y acceptance report](docs/XY-VALIDATION.md) for the synthetic live test.
 
 The selected pack and style are retained in the page URL, so reloading preserves that choice. Use `?pack=<local-pack-name>&style=ink` for a saved artwork or [the ink example](http://127.0.0.1:5174/?demo=1&style=ink). These URLs refer to files on the same local installation.
 
@@ -63,6 +63,8 @@ Completed raw takes appear in `sessions/`; automatic visual packs appear in `viz
 | `ui/` | Recording desk: accessible controls, server status, JSONL archive |
 | `viz/src/main.js`, `viz/src/hud.js` | Viewer coordination, playback, library, live view and interface |
 | `viz/src/atlas-data.js`, `viz/src/atlas.js` | Exact event summaries, circular artwork geometry and inspection |
+| `viz/src/nebula.js`, `viz/src/nebula-shaders.js` | Bounded gesture cloud, accretion filaments, depth, orbital motion and picking |
+| `viz/src/gesture-replay.js` | Original X/Y access, per-finger seek/loop state and gap-aware trails |
 | `viz/src/` | Three.js rendering, materials, layout, demo generation and pack loading |
 | `test/` | Recorder, transport, server, pack and viewer regression coverage |
 

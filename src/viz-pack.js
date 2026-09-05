@@ -6,6 +6,8 @@
 //                   per-lane records are in arrival order (normally ascending
 //                   tMs, but upstream reorders are preserved as recorded)
 //   strokes.bin   — one 16-byte record per noteOn..noteOff pair on a lane
+//   gestures.bin  — optional lossless XY/time/finger sidecar, aligned with
+//                   events.bin; old 12-byte consumers remain compatible
 // Lanes are ordered zone -> seat (the brief's venue ordering with the data we
 // have); the same session file always produces byte-identical packs.
 import { createReadStream, mkdirSync, writeFileSync, readFileSync, readdirSync, renameSync, statSync } from 'node:fs';
@@ -14,11 +16,13 @@ import { join, dirname, basename } from 'node:path';
 
 export const EVENT_RECORD_BYTES = 12;
 export const STROKE_RECORD_BYTES = 16;
+export const GESTURE_RECORD_BYTES = 32;
 export const TYPE_CODES = {
   keepalive: 0, noteOn: 1, noteOff: 2, fingerMove: 3, loadProgress: 4, disconnect: 5,
 };
 
 const q16 = (x) => Math.max(0, Math.min(65535, Math.round((x ?? 0) * 65535)));
+const coordinate = (normalized, raw) => Number.isFinite(normalized) ? normalized : Number.isFinite(raw) ? raw : NaN;
 // uint32-safe time: an already-recorded take may carry a negative or fractional
 // tMs (pre-guard recordings, float server clocks) — clamp instead of throwing
 // so no recording on disk is ever unpackable.
@@ -27,7 +31,8 @@ const clampT = (t, durationMs) => Math.max(0, Math.min(durationMs, Math.round(t 
 export async function packSession(inputPath, outDir) {
   const rl = createInterface({ input: createReadStream(inputPath), crlfDelay: Infinity });
   let meta = null;
-  // pid -> { z, s, events: flat [tMs, uq, vq, type, line] tuples }
+  // pid -> { z, s, events: flat [tMs, x, y, type, line, finger] tuples }.
+  // Keep original JS-number precision until writing the compatibility binary.
   const byPid = new Map();
 
   // A crash/power-cut mid-flush leaves half a JSON line at EOF. Tolerate a
@@ -47,7 +52,8 @@ export async function packSession(inputPath, outDir) {
     if (!p) { p = { z: obj.zone, s: obj.seatNumber, events: [] }; byPid.set(obj.participantId, p); }
     const type = TYPE_CODES[obj.eventType];
     if (type === undefined) throw new Error(`unknown eventType ${obj.eventType}`);
-    p.events.push(obj.tMs, q16(obj.u), q16(obj.v), type, obj.line ?? 0, obj.finger ?? 0);
+    const finger = Number.isInteger(obj.finger) ? obj.finger : Number.isInteger(obj.raw?.f) ? obj.raw.f : NaN;
+    p.events.push(obj.tMs, coordinate(obj.u, obj.raw?.uu), coordinate(obj.v, obj.raw?.vv), type, obj.line ?? 0, finger);
   }
   if (!meta) throw new Error('no session header found');
   const durationMs = meta.durationMs;
@@ -62,6 +68,7 @@ export async function packSession(inputPath, outDir) {
   for (const pid of pids) eventCount += byPid.get(pid).events.length / 6;
 
   const events = Buffer.alloc(eventCount * EVENT_RECORD_BYTES);
+  const gestures = Buffer.alloc(eventCount * GESTURE_RECORD_BYTES);
   const strokes = [];
   const participants = [];
   const zones = [];
@@ -79,8 +86,10 @@ export async function packSession(inputPath, outDir) {
     const open = new Map(); // finger -> { t0, uq, vq, line }
     for (let i = 0; i < n; i++) {
       const j = i * 6;
-      const tMs = p.events[j]; const uq = p.events[j + 1]; const vq = p.events[j + 2];
-      const type = p.events[j + 3]; const lineNo = p.events[j + 4]; const finger = p.events[j + 5];
+      const tMs = p.events[j]; const x = p.events[j + 1]; const y = p.events[j + 2];
+      const uq = q16(Number.isFinite(x) ? x : 0); const vq = q16(Number.isFinite(y) ? y : 0);
+      const type = p.events[j + 3]; const lineNo = p.events[j + 4]; const recordedFinger = p.events[j + 5];
+      const finger = Number.isFinite(recordedFinger) ? recordedFinger : 0; // legacy stroke-pairing rule
       const base = (offset + i) * EVENT_RECORD_BYTES;
       events.writeUInt16LE(lane, base + 0);
       events.writeUInt16LE(uq, base + 2);
@@ -88,6 +97,11 @@ export async function packSession(inputPath, outDir) {
       events.writeUInt32LE(clampT(tMs, durationMs), base + 6);
       events.writeUInt8(type, base + 10);
       events.writeUInt8(lineNo & 0xff, base + 11);
+      const gestureBase = (offset + i) * GESTURE_RECORD_BYTES;
+      gestures.writeDoubleLE(Number.isFinite(tMs) ? tMs : NaN, gestureBase);
+      gestures.writeDoubleLE(x, gestureBase + 8);
+      gestures.writeDoubleLE(y, gestureBase + 16);
+      gestures.writeDoubleLE(recordedFinger, gestureBase + 24);
 
       if (type === TYPE_CODES.noteOn) {
         const prev = open.get(finger);
@@ -136,6 +150,7 @@ export async function packSession(inputPath, outDir) {
     laneCount: participants.length,
     eventCount,
     strokeCount: strokes.length,
+    gestures: { formatVersion: 1, file: 'gestures.bin', recordBytes: GESTURE_RECORD_BYTES, count: eventCount },
     truncatedTail: pendingParseError !== null, // torn EOF line skipped (crashed take salvaged)
     zones,
     participants,
@@ -144,6 +159,7 @@ export async function packSession(inputPath, outDir) {
   mkdirSync(outDir, { recursive: true });
   writeFileSync(join(outDir, 'events.bin'), events);
   writeFileSync(join(outDir, 'strokes.bin'), strokeBuf);
+  writeFileSync(join(outDir, 'gestures.bin'), gestures);
   writeFileSync(join(outDir, 'manifest.json'), JSON.stringify(manifest));
 
   // keep a directory-level index so the viewer discovers packs dynamically.

@@ -1,8 +1,34 @@
 # Eseri okumak
 
-2000 TRACES, bir kayıt oturumundaki ses ve hareket olaylarını dairesel bir veri eserine dönüştürür. **Atlas** ışıklı koyu zemin, **Mürekkep** ise açık kâğıt üzerinde grafik bir baskı yorumudur. İki görünüm aynı veriyi, konumları ve geometriyi kullanır.
+2000 TRACES, bir kayıt oturumundaki ses ve hareket olaylarını etkileşimli bir veri eserine dönüştürür. Varsayılan **Nebula**, kaydedilmiş X/Y hareketlerini sarmal bir çekim alanına yerleştirir. **Atlas** ve **Mürekkep**, aynı kaydın gruplara ve zaman dilimlerine ayrılmış dairesel özetidir; bu iki görünüm aynı geometriyi ışıklı veya tek renk baskı yorumuyla gösterir.
 
-## Görsel karşılıklar
+## Nebula ve kayıtlı hareket
+
+| İşaret | Verideki karşılığı |
+| --- | --- |
+| X ekseni | Kaydedilmiş yatay hareket değeri, yörüngenin açısal kıvrımını değiştirir. |
+| Y ekseni | Kaydedilmiş dikey hareket değeri, yörünge yarıçapını ve diskin kalınlığını değiştirir. |
+| Sarmaldaki ilerleme | Katılımcının olay zamanı, izleri içeri doğru sarar. Oynatma zamanı diskin yönelimini de belirler. |
+| İnce iz bağlantıları | Aynı katılımcının **bilinen aynı dokunuşuna** ait ardışık X/Y noktaları. Dokunuş kimliği bilinmeyen eski olaylar, uydurulmuş bir parmak çizgisine bağlanmaz. |
+| Mavi / altın ışık | Nebula'nın sanatsal ışık malzemesidir; müzik hattı, ses yüksekliği veya fiziksel enerji ölçümü değildir. |
+
+**Eseri oku → Yörünge hareketi**, kaydedilmiş koordinatları değiştirmeyen ek görsel hareketi açıp kapatır. Bu hareket, yeni seyirci verisi alındığı anlamına gelmez.
+
+Bir izi seçtiğinizde X/Y okuması, olay zamanı ve varsa dokunuş kimliği inceleme panelinde görünür. Küçük koordinat alanı, en fazla 64 kayıtlı iz örneğini gösterir; eksik koordinatlar `—` olarak kalır. Gösterilen değerler yeni bir canlı akış iddiası taşımaz.
+
+İleri / geri zaman seçimi, seçili katılımcının her bilinen parmağı için son kayıtlı konumu bulur; ara koordinat üretmez. Nota bitişi, bağlantı kesilmesi, eksik koordinat veya 1,2 saniyeden uzun veri boşluğu çizgiyi keser. Son konum gerekirse görünür kalır ve etkin bir jest olarak etiketlenmez.
+
+X/Y kaynağı eser bilgisinde belirtilir:
+
+- **X/Y kayıt mevcut:** `gestures.bin` yan dosyası, ham JSONL'de bulunan X, Y, zaman ve dokunuş bilgisini Float64 olarak taşır; eksik alanlar ayrıca korunur.
+- **Eski paket · 16-bit X/Y:** eski `events.bin` dosyasında U ve V zaten vardır. Bu değerler nicemlenmiştir; dokunuş kimliği ve bir sıfırın gerçekten kaydedilmiş değer mi, eski eksik-alan varsayımı mı olduğu ayırt edilemez.
+- **Örnek X/Y verisi:** sentetik örnek kayıttır.
+
+Eski paketlerde X zaman bilgisinden türetilmez, Y başka bir eksenden uydurulmaz. Ham JSONL daha ayrıntılı koordinat ve dokunuş bilgisi içeriyorsa yeniden paketlemek bu bilgiyi yeni yan dosyaya taşır; ham kayıtta bulunmayan bilgi geri üretilemez.
+
+Nebula, kayıt büyüklüğünden bağımsız olarak en fazla **230.000 gerçek nota / hareket örneği** çizer; nota başlangıçlarına ayrılan üst sınır 26.000'dir. Örnekler deterministik seçilir ve iki geçerli koordinatı bulunmayan olaylar nokta bulutuna eklenmez. En fazla 7.000 ışık halesi aynı örneklerin görsel katmanıdır; ek kayıt olayı değildir. En fazla **100.000 gerçek, aynı parmağa ait ardışık hareket bağlantısı** çizilir. Milyonlarca olayın tamamı ayrı GPU noktaları olarak gösterilmez. Seçili katılımcının X/Y oynatımı, görsel nokta örneklemesinden bağımsız olarak kayıt verisini okur.
+
+## Atlas / Mürekkep görsel karşılıkları
 
 | İşaret | Verideki karşılığı |
 | --- | --- |
@@ -17,7 +43,7 @@
 
 ## Keşfetmek
 
-- Bir hücreye dokunun: katılımcı aralığını, zaman dilimini, olay / nota / hareket sayılarını inceleyin. Dış çeperdeki bir çubuğa dokunarak o katılımcıyı seçin.
+- Nebula'da bir hareket izini seçerek kayıtlı X/Y değerlerini inceleyin. Atlas / Mürekkep'te bir hücreye dokunun: katılımcı aralığını, zaman dilimini, olay / nota / hareket sayılarını inceleyin. Dış çeperdeki bir çubuğa dokunarak o katılımcıyı seçin.
 - Sürükleyerek kaydırın; tekerlekle veya dokunmatik ekranda iki parmakla yakınlaşın.
 - **Shift + dikey sürükleme** ile kabartıya farklı açılardan bakın. **Eseri oku → Kabartı / eğim** aynı işlemi dokunmatik ekran ve klavyeyle de sağlar.
 - **F / ekrana sığdır** kaydırma, yakınlaşma ve eğimi sıfırlar. **Esc** seçimi / açık açıklamayı kapatır. **H** arayüzü gizler; H veya görünür geri dönüş düğmesi arayüzü geri getirir.
@@ -25,7 +51,7 @@
 
 Seçtiğiniz eser ve görünüm sayfa adresine yazılır. Örneğin `?pack=kayit-adi&style=ink`, aynı yerel paketi Mürekkep görünümünde; `?demo=1&style=ink` örneği açar. Sayfayı yenilemek eser / görünüm seçimini korur; URL kayıt dosyalarını başka bir makineye taşımaz.
 
-## Tam sayımlar, özetlenmiş çizim
+## Atlas sayımları ve özetleme sınırları
 
 Kaydın bütün olayları taranır; hücre ve katılımcı sayımları örnekleme yapılmadan hesaplanır. Toplam olay sayısına bağlantı / yaşam döngüsü kayıtları da dahildir. Görsel aktivite hücreleri yalnız nota başlangıcı veya hareket içeren aralıklar için çizilir.
 
@@ -39,6 +65,6 @@ Canlı kayıt sürerken ayrı, artan veriyle çalışan görünüm kullanılır.
 
 ## Görseli kaydetmek
 
-**Görseli kaydet**, seçili Atlas / Mürekkep yorumunu **4096 × 4096 PNG** olarak hazırlar. Açılan önizlemede eseri inceleyin ve **PNG'yi indir** bağlantısıyla dosyayı kaydedin. Çıktı tüm kaydın tamamlanmış hâlidir; kamera kaydırması, yakınlaşma, eğim, katılımcı seçimi, hover vurgusu ve arayüz içermez. Etkileşim durumu işlemden sonra geri yüklenir. Önizleme kapandığında geçici görsel belleği serbest bırakılır. Dışa aktarma kaydın JSONL veya paket dosyalarını değiştirmez.
+**Görseli kaydet**, seçili Nebula / Atlas / Mürekkep yorumunu **4096 × 4096 PNG** olarak hazırlar. Açılan önizlemede eseri inceleyin ve **PNG'yi indir** bağlantısıyla dosyayı kaydedin. Çıktı tüm kaydın tamamlanmış hâlidir; kullanıcının kamera kaydırması, yakınlaşması, ek eğimi, katılımcı seçimi, hover vurgusu ve arayüz içermez. Atlas / Mürekkep düz gösterilir; Nebula diskin standart eğik bakışını korur. Etkileşim durumu işlemden sonra geri yüklenir. Önizleme kapandığında geçici görsel belleği serbest bırakılır. Dışa aktarma kaydın JSONL veya paket dosyalarını değiştirmez.
 
-Uygulama kaynağı: [veri özeti](../viz/src/atlas-data.js), [geometri ve seçim](../viz/src/atlas.js), [görsel malzemeler](../viz/src/atlas-shaders.js), [PNG çıktısı](../viz/src/export-still.js). Kayıt ve kurtarma işlemleri için [operatör kılavuzuna](OPERATOR.md) bakın.
+Uygulama kaynağı: [Nebula](../viz/src/nebula.js), [X/Y oynatımı](../viz/src/gesture-replay.js), [Atlas veri özeti](../viz/src/atlas-data.js), [Atlas geometri ve seçim](../viz/src/atlas.js), [görsel malzemeler](../viz/src/atlas-shaders.js), [PNG çıktısı](../viz/src/export-still.js). Kayıt ve kurtarma işlemleri için [operatör kılavuzuna](OPERATOR.md) bakın.

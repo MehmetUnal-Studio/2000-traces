@@ -5,7 +5,7 @@ import { exportStill } from '../viz/src/export-still.js';
 test('print composition uses the final pipeline and restores every interactive uniform on GPU failure', async () => {
   const values = { uDuration: 90000, uTime: 31000, uPointScale: 300, uPointMax: 32,
     uSelLane: 19, uReplaying: 1, uSelRow: 4, uSelColumn: 76, uHoverRow: 5,
-    uHoverColumn: 10, uHoverLane: 7, uTilt: 0.5, uInk: 1 };
+    uHoverColumn: 10, uHoverLane: 7, uTilt: 0.5, uOrbit: 1.3, uInk: 1 };
   const uniforms = Object.fromEntries(Object.entries(values).map(([key, value]) => [key, { value }]));
   const playheadMat = { opacity: 0.55 };
   const previousTarget = {};
@@ -26,6 +26,7 @@ test('print composition uses the final pipeline and restores every interactive u
       assert.equal(uniforms.uTime.value, 90000);
       assert.equal(uniforms.uInk.value, 1);
       assert.equal(uniforms.uTilt.value, 0);
+      assert.equal(uniforms.uOrbit.value, 0, 'print is independent of ambient orbital animation');
       assert.equal(playheadMat.opacity, 0);
       for (const key of ['uSelLane', 'uSelRow', 'uSelColumn', 'uHoverRow', 'uHoverColumn', 'uHoverLane']) {
         assert.equal(uniforms[key].value, -1);
