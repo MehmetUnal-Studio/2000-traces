@@ -39,15 +39,22 @@ export function coreDiskDensity(point,footprint=0,{
   const radius=Math.hypot(point[0],point[1]);
   if(radius<=CORE_RAY.inner||radius>=CORE_RAY.outer)return 0;
   const phase=animation*(.15+clamp(motionSpeed,0,1)*.13)*(1+clamp(motionTurn,-1,1)*.20);
-  const angle=Math.atan2(point[1],point[0])-phase*(.31/Math.max(radius,CORE_RAY.inner))**1.5;
+  const radial=(radius-CORE_RAY.inner)/(CORE_RAY.outer-CORE_RAY.inner);
+  // Fixed logarithmic shear matches the GPU's advected material field. The
+  // spatial frequency does not grow with elapsed performance time.
+  const angle=Math.atan2(point[1],point[0])-phase*.55+Math.log(radius/CORE_RAY.inner)*4.1;
   const x=Math.cos(angle),y=Math.sin(angle);
-  const broad=noise(x*4.3+radius*27,y*4.3+phase*.11);
-  const detail=noise(x*13+radius*73,y*13-phase*.2);
-  const boundary=smooth(CORE_RAY.inner,CORE_RAY.inner+.018,radius)*(1-smooth(CORE_RAY.outer-.07,CORE_RAY.outer,radius));
-  const phaseFine=radius*820+broad*(9-clamp(motionCoherence,0,1)*3)+Math.sin(angle*7)*1.5-phase*2;
-  const fine=mix((.5+.5*Math.sin(phaseFine))**14,.149,clamp(footprint*820/Math.PI,0,1));
-  const streams=(.35+.65*broad)*(.62+.38*detail);
-  return boundary*streams*(.25+fine*1.65);
+  const warp=noise(x*3.1+radial*2,y*3.1+phase*.07);
+  const qx=x*(2.8+radial*.7)+radial*15+warp*(1.7-clamp(motionCoherence,0,1)*.35);
+  const qy=y*(2.8+radial*.7)+phase*.10;
+  const broad=noise(qx,qy);
+  const detail=noise(qx*2.03+7.2,qy*2.03-13.1);
+  const fine=mix(noise(qx*4.17-11.3,qy*4.17+4.8),.5,smooth(.3,1.8,footprint*140));
+  const mass=broad*.56+detail*.29+fine*.15;
+  const ribbon=1-smooth(.04,.22,Math.abs(detail-.5+(broad-.5)*.48));
+  const filaments=ribbon*(.18+fine*.82)*(.35+broad*.65);
+  const boundary=smooth(CORE_RAY.inner,CORE_RAY.inner+.018,radius)*(1-smooth(CORE_RAY.outer-.085,CORE_RAY.outer,radius));
+  return boundary*(.13+mass*.55+filaments*.34)*(.48+broad*.52);
 }
 export function raySphereInterval(origin,direction,radius) {
   const b=dot(origin,direction),c=dot(origin,origin)-radius*radius;

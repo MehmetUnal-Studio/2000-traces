@@ -52,28 +52,47 @@ export const CORE_LENS_FRAGMENT=/* glsl */`
     float coherence=clamp(uMotionCoherence,0.0,1.0);
     float turn=clamp(uMotionTurn,-1.0,1.0);
     float phase=uAnimation*(0.15+speed*0.13)*(1.0+turn*0.20);
-    float angle=atan(p.y,p.x)-phase*pow(0.31/max(radius,INNER),1.5);
+    float radial=(radius-INNER)/(OUTER-INNER);
+    // A sheared, advecting material field replaces the equally spaced sine
+    // rings. Periodic angular coordinates keep its seam invisible. Fixed
+    // shear avoids winding the texture ever tighter over a long performance.
+    float angle=atan(p.y,p.x)-phase*0.55+log(radius/INNER)*4.1;
     vec2 orbit=vec2(cos(angle),sin(angle));
-    float broad=noise(orbit*4.3+vec2(radius*27.0,phase*0.11));
-    float detail=noise(orbit*13.0+vec2(radius*73.0,-phase*0.2));
-    float boundary=smoothstep(INNER,INNER+0.018,radius)*(1.0-smoothstep(OUTER-0.07,OUTER,radius));
-    float phaseFine=radius*820.0+broad*(9.0-coherence*3.0)+sin(angle*7.0)*1.5-phase*2.0;
-    float fine=pow(0.5+0.5*sin(phaseFine),14.0);
-    // Integrate unresolved subpixel strands to their mean, preserving print
-    // radiance and avoiding moire when the camera approaches or recedes.
-    fine=mix(fine,0.149,clamp(footprint*820.0/3.14159265,0.0,1.0));
-    float streams=(0.35+0.65*broad)*(0.62+0.38*detail);
-    float density=boundary*streams*(0.25+fine*1.65);
+    float warp=noise(orbit*3.1+vec2(radial*2.0,phase*0.07));
+    vec2 field=orbit*(2.8+radial*0.7)+vec2(radial*15.0+warp*(1.7-coherence*0.35),phase*0.10);
+    float broad=noise(field);
+    float detail=noise(field*2.03+vec2(7.2,-13.1));
+    float fine=noise(field*4.17+vec2(-11.3,4.8));
+    // Unresolved turbulence fades to its mean rather than sparkling or
+    // becoming engraved circles when viewed from far away.
+    fine=mix(fine,0.5,smoothstep(0.3,1.8,footprint*140.0));
+    float mass=broad*0.56+detail*0.29+fine*0.15;
+    float ribbon=1.0-smoothstep(0.04,0.22,abs(detail-0.5+(broad-0.5)*0.48));
+    float filaments=ribbon*(0.18+fine*0.82)*(0.35+broad*0.65);
+    float boundary=smoothstep(INNER,INNER+0.018,radius)*(1.0-smoothstep(OUTER-0.085,OUTER,radius));
+    float density=boundary*(0.13+mass*0.55+filaments*0.34)*(0.48+broad*0.52);
     vec3 tangent=vec3(-p.y,p.x,0.0)/max(radius,0.0001);
     float approaching=clamp(dot(tangent,-direction),-1.0,1.0);
-    float doppler=pow(1.0+approaching*0.34,2.0);
-    float heat=clamp((OUTER-radius)/(OUTER-INNER)*0.65+fine*0.55,0.0,1.0);
-    vec3 color=mix(vec3(1.0,0.28,0.035),vec3(1.45,1.24,0.91),heat);
-    color=mix(color,vec3(0.075,0.27,0.50),smoothstep(0.39,OUTER,radius)*0.66);
-    float light=(2.3+fine*6.0)*(0.90+flow*0.80)*doppler;
-    // A thin luminous inner stream survives an idle/empty live session.
-    float photon=exp(-pow((radius-(INNER+0.011))/0.006,2.0));
-    color=color*light+vec3(1.65,1.37,0.88)*photon*(3.5+flow*2.0);
+    float doppler=pow(1.0+approaching*0.22,2.0);
+    // Small thermal eddies use Cartesian coordinates rather than sharing
+    // the stretched density ribbons: gas has texture across the flow too.
+    float spin=atan(p.y,p.x)-phase*0.55;
+    vec2 gas=radius*vec2(cos(spin),sin(spin))+p.z*vec2(0.71,-0.43);
+    gas+=vec2(noise(gas*43.0+phase*0.06),noise(gas*43.0+17.3-phase*0.05))*0.009;
+    float thermal=noise(gas*126.0+vec2(0.0,phase*0.08));
+    float grain=noise(gas*317.0+vec2(7.2,-13.1));
+    float dust=noise(gas*791.0+vec2(-11.3,4.8));
+    grain=mix(grain,0.5,smoothstep(0.45,1.6,footprint*317.0));
+    dust=mix(dust,0.5,smoothstep(0.45,1.6,footprint*791.0));
+    float gaseous=thermal*0.46+grain*0.34+dust*0.20;
+    float hot=smoothstep(0.47,0.77,gaseous);
+    float heat=clamp((1.0-radial)*0.50+hot*0.50,0.0,1.0);
+    vec3 color=mix(vec3(0.65,0.115,0.035),vec3(1.18,0.52,0.22),smoothstep(0.15,0.57,heat));
+    color=mix(color,vec3(1.30,1.17,1.02),smoothstep(0.55,0.85,heat));
+    color=mix(color,vec3(0.09,0.15,0.20),smoothstep(0.65,1.0,radial)*0.65);
+    float light=(1.7+mass*1.4)*(0.15+gaseous*0.55+hot*1.35)*(0.85+flow*0.65)*doppler;
+    float photon=exp(-pow((radius-(INNER+0.011))/0.008,2.0));
+    color=color*light+vec3(0.72,0.58,0.36)*photon*(0.25+hot*0.75)*(0.85+flow*0.55);
     return vec4(color,density);
   }
   void main() {

@@ -69,6 +69,29 @@ velocity already emitted; an archive can sort that event chronologically.
   and checks one stored event plus the final summary. Production capture timing
   is unchanged.
 
+## Accretion material refinement — 2026-09-06
+
+The core now uses irregular advected density instead of equally spaced sine
+rings. Fixed logarithmic shear prevents the material winding into increasingly
+fine bands during long runs. Cartesian thermal eddies, including a depth
+offset, break up the broad flow with copper interstices and sparse ivory hot
+knots. Lower Doppler contrast and a weaker mottled inner glow reduce the
+polished-metal appearance. Fine texture fades with pixel footprint. The
+curved-ray geometry, camera behavior, event coordinates and UDP are unchanged.
+
+The CPU selection density was updated to match the GPU material. Five new tests
+cover the angular seam, finite bounds, phase/footprint continuity, 24-hour
+spatial stability and edge-on occlusion at display and print resolution.
+`npm run check` passes **184 tests** and the production build. The existing
+Vite chunk-size warning remains.
+
+Chrome QA on `kayit-2026-09-05T16-56-19-183Z` covered fitted, oblique and
+approaching views while refining the material. The final 4096 × 4096 PNG
+preview rendered successfully; download dimensions were independently checked.
+No shader compilation or WebGL errors appeared in the inspected logs; existing
+extension/message-channel warnings remain. This material pass does not certify
+venue frame rate or downstream audio.
+
 ## Limits
 
 This is a finite artistic ray-curvature model, not a general-relativistic
