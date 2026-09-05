@@ -63,6 +63,11 @@ velocity already emitted; an archive can sort that event chronologically.
 - No shader compilation or WebGL errors were observed in the inspected logs.
   Chrome extension messaging warnings and one asynchronous message-channel
   error were present; these are not evidence of a clean whole-browser console.
+- Initial CI exposed a pre-existing 300 ms CLI test window that could expire
+  during cold connection startup. The clean-close fixture now waits for its
+  actual JSONL event before ending the response, allows 2 seconds for the take,
+  and checks one stored event plus the final summary. Production capture timing
+  is unchanged.
 
 ## Limits
 
