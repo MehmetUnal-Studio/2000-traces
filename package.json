@@ -15,6 +15,12 @@
     "viz:pack": "node src/viz-pack.js",
     "build": "vite build --config viz/vite.config.js",
     "preview": "vite preview --config viz/vite.config.js --host 127.0.0.1",
+    "td:shaders": "node touchdesigner/generate-shaders.mjs",
+    "td:shaders:check": "node touchdesigner/generate-shaders.mjs --check",
+    "td:cinematic:field": "node touchdesigner/cinematic/generate-field.mjs",
+    "td:cinematic:field:check": "node touchdesigner/cinematic/generate-field.mjs --check",
+    "td:export": "node touchdesigner/export-assets.mjs",
+    "test:td": "node --test test/td-export.test.js && python3 -m unittest discover -s test -p 'test_td_*.py' && npm run td:shaders:check && npm run td:cinematic:field:check",
     "check": "npm test && npm run build"
   },
   "dependencies": {

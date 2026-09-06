@@ -1,0 +1,270 @@
+{
+  "formatVersion": 1,
+  "source": {
+    "pack": "kayit-2026-09-05T16-56-19-183Z",
+    "sessionId": "session-2026-09-05T16-56-19-183Z",
+    "rawDirectory": "raw",
+    "files": {
+      "manifest.json": {
+        "file": "raw/manifest.json",
+        "bytes": 32052,
+        "sha256": "768311a075455cb570e139b814f353bfaf8723cfdcc54e53be061ad26dd2d3c1"
+      },
+      "events.bin": {
+        "file": "raw/events.bin",
+        "bytes": 12884400,
+        "sha256": "a518b6604acf3ecb0f7e8e6a686404b291981855ef0858536edabfdddb7717b6"
+      },
+      "strokes.bin": {
+        "file": "raw/strokes.bin",
+        "bytes": 363600,
+        "sha256": "3525b1cd5b79a5266557f1804182d2a4f27c15abfc20b084402b12a2caec296a"
+      },
+      "gestures.bin": {
+        "file": "raw/gestures.bin",
+        "bytes": 34358400,
+        "sha256": "402f958125e02df2ebe2597d6247133f6ce44b5a9f007cc471e7f97ba88ea399"
+      }
+    }
+  },
+  "durationMs": 180000,
+  "laneCount": 578,
+  "eventCount": 1073700,
+  "exactGestures": true,
+  "textureEncoding": "Row-major RGBA Float32 little-endian; zero padding; row 0 contains record 0. Do not flip vertically.",
+  "groups": {
+    "dust": {
+      "count": 230000,
+      "width": 512,
+      "height": 450,
+      "recordedData": true,
+      "attributes": {
+        "position": {
+          "file": "dust/position.bin",
+          "dtype": "float32-le",
+          "components": 4,
+          "sourceComponents": 3,
+          "bytes": 3686400
+        },
+        "data": {
+          "file": "dust/data.bin",
+          "dtype": "float32-le",
+          "components": 4,
+          "sourceComponents": 4,
+          "bytes": 3686400
+        },
+        "size": {
+          "file": "dust/size.bin",
+          "dtype": "float32-le",
+          "components": 4,
+          "sourceComponents": 2,
+          "bytes": 3686400
+        },
+        "motion": {
+          "file": "dust/motion.bin",
+          "dtype": "float32-le",
+          "components": 4,
+          "sourceComponents": 4,
+          "bytes": 3686400
+        }
+      },
+      "sourceIndices": {
+        "file": "dust/source-indices.u32.bin",
+        "dtype": "uint32-le",
+        "components": 1,
+        "count": 230000,
+        "bytes": 920000
+      }
+    },
+    "halos": {
+      "count": 6970,
+      "width": 512,
+      "height": 14,
+      "recordedData": true,
+      "attributes": {
+        "position": {
+          "file": "halos/position.bin",
+          "dtype": "float32-le",
+          "components": 4,
+          "sourceComponents": 3,
+          "bytes": 114688
+        },
+        "data": {
+          "file": "halos/data.bin",
+          "dtype": "float32-le",
+          "components": 4,
+          "sourceComponents": 4,
+          "bytes": 114688
+        },
+        "size": {
+          "file": "halos/size.bin",
+          "dtype": "float32-le",
+          "components": 4,
+          "sourceComponents": 2,
+          "bytes": 114688
+        },
+        "motion": {
+          "file": "halos/motion.bin",
+          "dtype": "float32-le",
+          "components": 4,
+          "sourceComponents": 4,
+          "bytes": 114688
+        }
+      },
+      "sourceIndices": {
+        "file": "halos/source-indices.u32.bin",
+        "dtype": "uint32-le",
+        "components": 1,
+        "count": 6970,
+        "bytes": 27880
+      }
+    },
+    "filaments": {
+      "count": 100000,
+      "width": 512,
+      "height": 196,
+      "recordedData": true,
+      "attributes": {
+        "start": {
+          "file": "filaments/start.bin",
+          "dtype": "float32-le",
+          "components": 4,
+          "sourceComponents": 3,
+          "bytes": 1605632
+        },
+        "end": {
+          "file": "filaments/end.bin",
+          "dtype": "float32-le",
+          "components": 4,
+          "sourceComponents": 3,
+          "bytes": 1605632
+        },
+        "data": {
+          "file": "filaments/data.bin",
+          "dtype": "float32-le",
+          "components": 4,
+          "sourceComponents": 4,
+          "bytes": 1605632
+        },
+        "motion": {
+          "file": "filaments/motion.bin",
+          "dtype": "float32-le",
+          "components": 4,
+          "sourceComponents": 4,
+          "bytes": 1605632
+        }
+      },
+      "sourcePairs": {
+        "file": "filaments/source-pairs.u32.bin",
+        "dtype": "uint32-le",
+        "components": 2,
+        "count": 100000,
+        "bytes": 800000
+      }
+    },
+    "stars": {
+      "count": 2400,
+      "width": 512,
+      "height": 5,
+      "recordedData": false,
+      "attributes": {
+        "position": {
+          "file": "stars/position.bin",
+          "dtype": "float32-le",
+          "components": 4,
+          "sourceComponents": 3,
+          "bytes": 40960
+        },
+        "color": {
+          "file": "stars/color.bin",
+          "dtype": "float32-le",
+          "components": 4,
+          "sourceComponents": 3,
+          "bytes": 40960
+        },
+        "size": {
+          "file": "stars/size.bin",
+          "dtype": "float32-le",
+          "components": 4,
+          "sourceComponents": 2,
+          "bytes": 40960
+        }
+      }
+    },
+    "clouds": {
+      "count": 18,
+      "width": 512,
+      "height": 1,
+      "recordedData": false,
+      "attributes": {
+        "position": {
+          "file": "clouds/position.bin",
+          "dtype": "float32-le",
+          "components": 4,
+          "sourceComponents": 3,
+          "bytes": 8192
+        },
+        "size": {
+          "file": "clouds/size.bin",
+          "dtype": "float32-le",
+          "components": 4,
+          "sourceComponents": 1,
+          "bytes": 8192
+        },
+        "data": {
+          "file": "clouds/data.bin",
+          "dtype": "float32-le",
+          "components": 4,
+          "sourceComponents": 1,
+          "bytes": 8192
+        }
+      }
+    },
+    "timeline": {
+      "count": 10801,
+      "width": 512,
+      "height": 22,
+      "recordedData": true,
+      "attributes": {
+        "flow": {
+          "file": "timeline/flow.bin",
+          "dtype": "float32-le",
+          "components": 4,
+          "sourceComponents": 4,
+          "bytes": 180224
+        },
+        "motion": {
+          "file": "timeline/motion.bin",
+          "dtype": "float32-le",
+          "components": 4,
+          "sourceComponents": 4,
+          "bytes": 180224
+        }
+      },
+      "channels": {
+        "flow": [
+          "timeMs",
+          "activity",
+          "reserved",
+          "reserved"
+        ],
+        "motion": [
+          "speed01",
+          "turn01",
+          "coherence",
+          "energy"
+        ]
+      }
+    }
+  },
+  "timeline": {
+    "group": "timeline",
+    "hz": 60,
+    "count": 10801,
+    "exactTimes": "timeline/times.f64.bin",
+    "lookup": "Use upper_bound(exactTimes, timeMs)-1 (hold the latest causal sample). At durationMs select count-1.",
+    "maxEnvelopeLagMs": 16.666666666666668,
+    "durationMs": 180000,
+    "animationClock": "Separate free-running seconds; replay time is milliseconds. Never derive recorded X/Y from either clock."
+  }
+}

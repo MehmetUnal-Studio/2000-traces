@@ -1,0 +1,109 @@
+{
+  "version": 1,
+  "target": "TouchDesigner 2023.12230; native GLSL MAT/TOP, parameter glslversion=glsl430 (native probe verified)",
+  "geometry": "Rectangle SOP on XY, P.x/y -0.5..0.5; identity Geometry COMP; native instancing enabled with exact count and no per-instance transform channels",
+  "textures": "RGBA32F, nearest, no mipmaps; linear texel id=(row*width+column); all samplers of one draw share dimensions; unused texels zero",
+  "camera": {
+    "uCameraPos": "world position xyz",
+    "uCameraRight": "unit world right xyz",
+    "uCameraUp": "unit world up xyz",
+    "uCameraForward": "unit world forward into scene xyz",
+    "uCameraInfo": [
+      "tan(verticalFovRadians/2)",
+      "width/height",
+      "near",
+      "far"
+    ],
+    "uViewport": [
+      "physicalWidth",
+      "physicalHeight",
+      "1/width",
+      "1/height"
+    ]
+  },
+  "shared": {
+    "uTime": "recorded milliseconds",
+    "uDuration": "recorded duration milliseconds >=1",
+    "uOrbit": "radians",
+    "uTilt": "radians added to 40-degree artwork inclination",
+    "uAnimation": "seconds",
+    "uActivity": "0..1",
+    "uMotionSpeed": "0..1",
+    "uMotionTurn": "-1..1",
+    "uMotionCoherence": "0..1",
+    "uSelLane": "-1 or selected lane",
+    "uHoverLane": "-1 or hovered lane",
+    "uReplaying": "0 or 1",
+    "uPointMax": "physical pixels, browser default128",
+    "uPointScale": "retained compatibility uniform; perspective uses camera+viewport",
+    "uAtmosphere": "0 for dust",
+    "uDepthPass": "0 color; 1 sparse depth",
+    "uCount": "exact instance count",
+    "uActive": "1 core enabled"
+  },
+  "mats": {
+    "dust": {
+      "vertex": "dust.vert",
+      "pixel": "dust.frag",
+      "samplers": {
+        "sPositions": "localXYZ,0",
+        "sData": "timeMs,lane,noteOn,heat",
+        "sSizes": "worldDiameter,radiance,0,0",
+        "sMotion": "speed,turn,tangentDirection,radialDirection"
+      }
+    },
+    "atmosphere": {
+      "vertex": "atmosphere.vert",
+      "pixel": "atmosphere.frag",
+      "samplers": {
+        "sPositions": "localXYZ,0",
+        "sData": "timeMs,lane,noteOn,heat",
+        "sSizes": "worldDiameter,radiance,0,0",
+        "sMotion": "speed,turn,tangentDirection,radialDirection"
+      }
+    },
+    "filament": {
+      "vertex": "filament.vert",
+      "pixel": "filament.frag",
+      "samplers": {
+        "sStarts": "local start XYZ,0",
+        "sEnds": "local end XYZ,0",
+        "sData": "endTimeMs,lane,heat,XYdisplacement",
+        "sMotion": "speed,turn,tangentDirection,radialDirection"
+      }
+    },
+    "stars": {
+      "vertex": "stars.vert",
+      "pixel": "stars.frag",
+      "recordedData": false,
+      "samplers": {
+        "sPositions": "world XYZ,0",
+        "sColors": "linear RGB,0",
+        "sSizes": "worldDiameter,radiance,0,0"
+      }
+    },
+    "clouds": {
+      "vertex": "clouds.vert",
+      "pixel": "clouds.frag",
+      "recordedData": false,
+      "samplers": {
+        "sPositions": "world XYZ,0",
+        "sSizes": "worldDiameter,0,0,0",
+        "sData": "seed,0,0,0"
+      }
+    }
+  },
+  "rendering": {
+    "color": "RGBA16F or RGBA32F Render TOP, transparent black clear, MAT RGB blend Source Alpha + One, postmultalpha=False, depth-test on, depth-write off",
+    "depth": "second native RGBA32F Render TOP of dust/filaments/stars only; clone MAT uDepthPass=1, blend off, depth-test/write on, opaque white clear; output R is normalized window depth",
+    "core": "core.frag GLSL TOP, RGBA32F, numcolorbufs=2; buffer0 linear premultiplied emission RGBA, buffer1 normalized depth R (far1 on no hit); wire core to Render Select TOP and set index=1 (2023 native parameter)",
+    "composite": "inputs [fieldColor,fieldDepth,coreColor,coreDepth] in this order; native perspective camera must match the vector uniforms; leave inputfiltertype linear for color, depth uses shader-enforced nearest texelFetch with clamp-to-edge matching browser depth textures",
+    "bloom": "bloom-extract input composite, half resolution; bloom-blur horizontal then vertical for spread1.0 and2.4: uBlurStep=(spread/W,0,0,0) or(0,spread/H,0,0)",
+    "finish": "inputs [composite,finalBlur]; exact browser exposure1.18, bloom0.21, linear-to-sRGB and grain0.003; no additional output color transform"
+  },
+  "docs": [
+    "https://docs.derivative.ca/Write_a_GLSL_MAT",
+    "https://docs.derivative.ca/Write_a_GLSL_TOP",
+    "https://docs.derivative.ca/Render_Select_TOP"
+  ]
+}

@@ -4,6 +4,16 @@ A collective memory of a performance. Audience gestures become a circular, explo
 
 2000 TRACES records a bounded audience-event stream, preserves it as JSONL, and turns each session into an explorable Three.js / GLSL artwork. **Nebula** is the single visual language for both live recording and archived playback: phone X/Y gestures wind around a dark core, with blue and amber filaments, three-dimensional depth and orbital movement. The corona responds to the recent note/movement rate. The viewer supports inspection, participant isolation, playback, an archive and 4K PNG export. The separate operator desk keeps recording controls and session health visible.
 
+## TouchDesigner cinematic project
+
+The native, editable TouchDesigner version is included in **[touchdesigner/project](touchdesigner/project/README.md)** alongside the web version. Open **[2000 Traces Cinematic.toe](<touchdesigner/project/2000 Traces Cinematic.toe>)** with its adjacent `recording/` folder. The project contains its GLSL/Python DATs and the one recording required by this scene; no browser or recording server is needed for visual playback.
+
+Select `/traces_cinematic`, open **Custom Parameters → Camera**, then click **Pulse** beside **Start cinematic recording playback**. This plays the existing recording with a three-minute camera path. New recordings start in the web recording desk below. UDP replay is a separate, explicit control and requires the local server and original JSONL.
+
+![Native cinematic TouchDesigner output](<touchdesigner/project/Cinematic preview.png>)
+
+The delivered project was reopened in TouchDesigner 2023.12230: 73 operators, no operator errors or warnings; approximately 30 FPS at 1280×720 across four camera views on the development machine. See the [cinematic guide](docs/TOUCHDESIGNER-CINEMATIC.md) for native nodes, quality settings, optical approximation limits, source rebuild instructions and validation. The `.tox` component is included for importing into another project.
+
 ## Explore locally
 
 Requires **Node.js 22.12+** and npm. No account or live-stream credentials are needed for the example.
@@ -57,6 +67,7 @@ Completed raw takes appear in `sessions/`; automatic visual packs appear in `viz
 | `npm run build` | Build the viewer into `dist-viz/` |
 | `npm run preview` | Preview the built viewer; use the URL printed by Vite |
 | `npm run check` | Run the tests and production build |
+| `npm run test:td` | Verify native data export, replay/camera logic and shader source parity |
 
 `dist-viz/` contains the application and its synthetic example, **not local recording packs**. The local Vite development and preview servers serve `/packs/` directly from `viz/public/packs/`, so newly recorded sessions become available without restarting the viewer. A portable copy of `dist-viz/` contains no private session archive; serving recordings elsewhere requires a separate, deliberate setup.
 
@@ -80,14 +91,17 @@ Completed raw takes appear in `sessions/`; automatic visual packs appear in `viz
 | `viz/src/nebula-volume.js` | Continuous cloud structure shading actual event footprints |
 | `viz/src/` | Three.js rendering, materials, layout, demo generation and pack loading |
 | `test/` | Recorder, transport, server, pack and viewer regression coverage |
+| `touchdesigner/project/` | Saved cinematic `.toe`/`.tox`, preview and the exact recording assets used by that scene |
+| `touchdesigner/` | Native network builders, data exporter, GLSL sources and Python replay runtime |
 
 The data path is **upstream/file → recorder → JSONL → visual pack → viewer**. During recording, the local server also rebroadcasts compact events to the viewer. Playback and visual exports do not alter the raw take.
 
 ## Data and validation
 
 - `.env`, `sessions/`, raw `captures/*.raw`, `viz/public/packs/`, and `dist-viz/` are excluded from Git. Review additions before publishing; ignored local data is still present on disk.
+- `touchdesigner/project/recording/` is an intentional, bounded handoff of the single recording used by the saved TouchDesigner project (578 participant lanes, 1,073,700 events, 180 seconds). It preserves seat/zone identifiers, exact times and X/Y/finger data. Other session archives, credentials, local build requests and temporary render outputs are not included. The binary artwork pack does not replace the original JSONL needed for UDP replay.
 - Included fixtures and the example artwork support offline development. They do not establish venue readiness or prove a real performance capture.
-- CI runs the Node suite and production build on Node 22 and 24. Browser/GPU appearance and the venue stream still need hands-on acceptance on the target machine.
+- CI runs the Node suite, production build, native Python tests and shader parity checks on Node 22 and 24. Browser/GPU appearance and the venue stream still need hands-on acceptance on the target machine.
 - For operating limits and recovery, see [docs/OPERATOR.md](docs/OPERATOR.md). Historical handoff and implementation plans live under `docs/`; the running source defines current behavior.
 
 Creative context for the entrance: Yıldız Holding's [Senenin Yıldızları announcement, 10 April 2025](https://www.medyamerkezi.yildizholding.com.tr/tr/basin-bultenleri/senenin-yildizlari-17nci-kez-odullendirildi). The procedural cover does not assign a year or edition number to the current experience.

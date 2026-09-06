@@ -7,3 +7,11 @@ captures/*.raw
 
 viz/public/packs/
 dist-viz/
+touchdesigner/.build/
+touchdesigner/backups/
+touchdesigner/output/
+touchdesigner/assets/
+__pycache__/
+touchdesigner/project/*.[0-9]*.toe
+touchdesigner/project/Backup/
+touchdesigner/project/output/

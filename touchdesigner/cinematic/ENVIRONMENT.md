@@ -1,0 +1,13 @@
+# Distant decorative environment
+
+`environment.frag` is an original GLSL430 TOP producing linear HDR background light. It needs no input textures or external assets. Bind the same world camera position/right/up/forward and `uCameraInfo=(tan(verticalFov/2),aspect,near,far)` as the native field and core.
+
+Set **`uEnvironment=(0.25,0.6,0,0)`** initially: X controls the dim galactic dust band, Y controls sparse stars. The remaining components are reserved. A missing uniform is zero and makes the environment black. Keep this layer below the recorded ring in visual prominence; the gains are deliberately modest.
+
+Add its RGB to the **background** field before gravitational lensing, then use the existing core transmission/foreground composition. Do not add it after the black-hole composite: that would put distant stars over the shadow and skip their lensing. Alpha is 1 for the standalone TOP and should not mask the original field in the additive RGB combine. Both this output and the field are linear; apply display encoding only after final composition/optics.
+
+The dust band is fixed in world space on a radius-48 shell; two sparse star layers use radii 64 and 112. Camera rotation exposes coherent directions and camera translation produces small, differing distant parallax. These shells are a scenery approximation, not astronomical distance scaling or event particles. They are explicitly **decorative** and never add phone events, participants, gestures or replay packets.
+
+Six three-dimensional noise evaluations per pixel form fine galactic dust and darker lanes. The material starts at frequency 92 on the unit sky sphere and mixes rotated octaves; only the band orientation receives a separate low-frequency warp. This avoids the enlarged rounded cells seen in the first native preview. High frequencies fade to their mean with the camera's pixel footprint. The palette is faint, mostly neutral blue-grey with a small warm component, preserving the near-black void. A cell-based star profile likewise uses derivatives to widen unresolved stars with inverse-area energy compensation. No elapsed-time uniform, screen-space random seed or feedback is used, so a fixed camera gives a stable image. This is a compact procedural surface environment; it is not a full volumetric galactic transport simulation.
+
+Use 1280×720 or a matching-aspect smaller TOP if necessary. Confirm the subdued dust and stars are visible at the output's actual display brightness but do not compete with the main ring. Orbit/approach should change their perspective; pausing the camera should stop all scenery movement. Measure native GPU cost after integration; a GPU-time target has not been verified by the source-only implementation.

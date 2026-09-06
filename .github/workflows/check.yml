@@ -21,3 +21,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - run: npm run test:td
+      - name: Verify saved TouchDesigner project and recording assets
+        run: sha256sum -c checksums.sha256
+        working-directory: touchdesigner/project
