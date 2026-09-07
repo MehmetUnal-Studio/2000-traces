@@ -39,6 +39,7 @@ vec4 instanceTexel(sampler2D image,int index) {
 
   uniform float uPointScale;
   uniform float uSelLane;
+  uniform float uSolo;
   uniform float uHoverLane;
   out vec3 vColor;
   out float vAlpha;
@@ -122,7 +123,7 @@ vec3 position=vec3(P.x+0.5,P.y*2.0,0.0);
     vAcross=position.y*2.0;
     vCoverage=width/expanded;
     float focus=1.0-step(0.5,abs(aData.y-uSelLane));
-    float isolation=uSelLane < -0.5 ? 1.0 : mix(0.08,4.0,focus);
+    float isolation=uSelLane < -0.5 ? 1.0 : mix(uSolo > 0.5 ? 0.0 : 0.08, 4.0, focus);
     float hover=1.0-step(0.5,abs(aData.y-uHoverLane));
     vColor=nebulaLight(aData.z);
     vec2 cloud=cloudStructure(mix(aStart,aEnd,position.x));

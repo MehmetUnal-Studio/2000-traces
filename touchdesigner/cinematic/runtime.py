@@ -14,6 +14,12 @@ camera_state=None
 last_director_pose=None
 manual_target=(0.0,0.0,0.0)
 
+def interaction():
+    # Old .tox files and data-only test hosts do not have the optional viewer.
+    try: node=op('interaction')
+    except KeyError: return None
+    return node.module if node is not None else None
+
 def data():
     folder=Path(parent().par.Assets.eval()).expanduser()
     if not folder.is_absolute(): folder=Path(project.folder)/folder
@@ -114,6 +120,10 @@ def adopt_director():
 def pulse(name):
     global journey, camera_state
     c=parent()
+    controls=interaction()
+    if controls is not None and name in ('Fit','Approach','Openviewer'):
+        controls.action(name)
+        return
     if name in ('Restart','Startshow'):
         if op('io_runtime').module.poll()['locked']: return
         c.par.Position=0; c.par.Play=True
@@ -132,6 +142,8 @@ def update():
     c=parent(); now=absTime.seconds
     dt=0 if previous is None else max(0,now-previous)
     previous=now; source=data(); duration=source['layout']['durationMs']/1000
+    controls=interaction()
+    if controls is not None: controls.poll_pointer()
     transport=op('io_runtime').module.poll()
     if transport['locked']: c.par.Play=False
     if transport['positionMs'] is not None: c.par.Position=transport['positionMs']/1000
@@ -146,6 +158,10 @@ def update():
         pose=op('director_path').module.sample(ms/(duration*1000))
         last_director_pose=pose
         camera_state=None
+        position=pose['position']; target=pose['target']; fov=pose['fov']; focus=pose['focus']
+    elif controls is not None:
+        pose=controls.manual_pose(dt,last_director_pose)
+        last_director_pose=None
         position=pose['position']; target=pose['target']; fov=pose['fov']; focus=pose['focus']
     else:
         adopt_director()
@@ -180,6 +196,7 @@ def update():
         uAnimation=now if c.par.Animate else ms/1000,uActivity=sample['activity'],
         uMotionSpeed=float(motion[0]),uMotionTurn=float(motion[1]),uMotionCoherence=float(motion[2]),uMotionEnergy=float(motion[3]),
         uSelLane=c.par.Lane.eval(),uHoverLane=-1,uReplaying=1 if c.par.Play or transport['playing'] else 0,
+        uSolo=float(c.par.Isolate.eval()) if controls is not None else 0,
         uPointMax=128,uPointScale=500,uAtmosphere=0,uDepthPass=0,uActive=1,
         uAccretion=[c.par.Plasma.eval(),c.par.Density.eval(),c.par.Detail.eval(),c.par.Thickness.eval()],
         uRelativity=[c.par.Lensing.eval(),c.par.Beaming.eval(),c.par.Temperature.eval(),c.par.Corona.eval()],
@@ -188,6 +205,7 @@ def update():
         uGrade=[c.par.Exposure.eval(),c.par.Saturation.eval(),c.par.Bloom.eval(),c.par.Glare.eval()],
         uEnvironment=[c.par.Skygas.eval(),c.par.Skystars.eval(),0,0],
         uFilm=[c.par.Grain.eval(),c.par.Vignette.eval(),now if c.par.Animate else ms/1000,0])
+    if controls is not None: controls.update_selection(ms)
 
 def uniform(name,component,frame):
     if not values: update()

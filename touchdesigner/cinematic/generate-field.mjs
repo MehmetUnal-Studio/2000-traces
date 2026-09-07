@@ -70,6 +70,11 @@ for (const kind of kinds) {
   const fragmentSource=await readFile(new URL(kind+'.frag', source),'utf8');
   let vertex=vertexSource.replace(/^\/\/ Generated[^\n]*\n\/\/ Native[^\n]*\n/,'');
   let fragment=fragmentSource.replace(/^\/\/ Generated[^\n]*\n\/\/ Native[^\n]*\n/,'');
+  if (['dust','atmosphere','filament'].includes(kind)) {
+    vertex=once(vertex,'uniform float uSelLane;','uniform float uSelLane;\n  uniform float uSolo;');
+    vertex=vertex.replace(/mix\((0\.\d+),\s*(2\.3|4\.0),\s*focus\)/g,
+      'mix(uSolo > 0.5 ? 0.0 : $1, $2, focus)');
+  }
   vertex=once(vertex,'void main() {','out float vViewDepth;\n'+(kind==='dust'||kind==='stars'?optics:'')+'\nvoid main() {');
   const view = kind==='filament' ? 'p' : kind==='stars'||kind==='clouds' ? 'view' : 'viewPosition';
   const projection=`gl_Position=TDWorldToProj(vec4(tdViewToWorld(${view}${view==='p'?'':'.xyz'}),1.0));`;

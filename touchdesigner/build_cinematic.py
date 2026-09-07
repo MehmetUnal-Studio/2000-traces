@@ -11,7 +11,7 @@ import re
 # Textport callers supply TRACES_SOURCE_DIR; Python file execution uses __file__.
 ROOT = Path(TRACES_SOURCE_DIR) if 'TRACES_SOURCE_DIR' in globals() else Path(__file__).resolve().parent
 ASSETS = Path(TRACES_ASSET_DIR) if 'TRACES_ASSET_DIR' in globals() else ROOT / 'assets' / 'kayit-2026-09-05T16-56-19-183Z'
-layout = json.loads((ASSETS / 'layout.json').read_text())
+layout = json.loads((ASSETS / 'layout.json').read_text(encoding='utf-8'))
 base = op('/traces_cinematic')
 if base is None:
     base = op('/').create(baseCOMP, 'traces_cinematic')
@@ -47,15 +47,20 @@ parameter(page, 'Float', 'Speed', 'Playback speed', 1, 0.25, 4)
 parameter(page, 'Toggle', 'Loop', 'Loop recording', True)
 page.appendPulse('Restart', label='Replay from start')
 parameter(page, 'Int', 'Lane', 'Isolate participant · -1 = all', -1, -1, layout['laneCount']-1)
+parameter(page, 'Toggle', 'Isolate', 'Only selected seat traces', True)
+page.appendPulse('Openviewer', label='Open interactive cinema')
+parameter(page, 'Toggle', 'Openonload', 'Open cinema when project loads', True)
 page = base.appendCustomPage('Camera')
-parameter(page, 'Float', 'Distance', 'Camera distance', 2.45, 0.96, 7)
-parameter(page, 'Float', 'Azimuth', 'Camera azimuth', 32, -180, 180)
+parameter(page, 'Float', 'Distance', 'Camera distance to pivot', 2.45, 0.15, 12)
+parameter(page, 'Float', 'Azimuth', 'Camera azimuth', 32)
+base.par.Azimuth.normMin=-180; base.par.Azimuth.normMax=180
 parameter(page, 'Float', 'Elevation', 'Camera elevation', 18, -85, 85)
 parameter(page, 'Float', 'Fov', 'Vertical field of view', 45, 20, 80)
 parameter(page, 'Toggle', 'Director', 'Follow recorded 3 minute camera path', False)
 page.appendPulse('Startshow', label='Start cinematic recording playback')
 page.appendPulse('Approach', label='Approach the horizon · 16 seconds')
 page.appendPulse('Fit', label='Reset camera')
+for axis in 'xyz': parameter(page, 'Float', 'Pivot'+axis, 'Camera pivot '+axis.upper(), 0, -.72, .72)
 page = base.appendCustomPage('Image')
 parameter(page, 'Int', 'Width', 'Output width · current NC key', 1280, 256, 1280)
 parameter(page, 'Int', 'Height', 'Output height · current NC key', 720, 256, 1280)
@@ -94,10 +99,15 @@ def text_dat(name, text, x, y):
     node=base.create(textDAT,name); node.text=text; node.nodeX=x; node.nodeY=y
     return node
 
-runtime=text_dat('runtime', (ROOT/'cinematic/runtime.py').read_text(), -800, 300)
-text_dat('director_path', (ROOT/'cinematic/camera.py').read_text(), -1020, 460)
-text_dat('replay_client', (ROOT/'replay_client.py').read_text(), -1020, 180)
-text_dat('io_runtime', (ROOT/'io_runtime.py').read_text(), -1020, 300)
+runtime=text_dat('runtime', (ROOT/'cinematic/runtime.py').read_text(encoding='utf-8'), -800, 300)
+text_dat('interaction', (ROOT/'cinematic/interaction.py').read_text(encoding='utf-8'), -1200, 850)
+text_dat('navigation_model', (ROOT/'cinematic/navigation.py').read_text(encoding='utf-8'), -1200, 700)
+text_dat('seat_replay', (ROOT/'cinematic/selection.py').read_text(encoding='utf-8'), -1200, 550)
+seats=base.create(tableDAT,'SEATS'); seats.nodeX=-1000; seats.nodeY=1000
+seats.appendRow(['label','lane'])
+text_dat('director_path', (ROOT/'cinematic/camera.py').read_text(encoding='utf-8'), -1020, 460)
+text_dat('replay_client', (ROOT/'replay_client.py').read_text(encoding='utf-8'), -1020, 180)
+text_dat('io_runtime', (ROOT/'io_runtime.py').read_text(encoding='utf-8'), -1020, 300)
 texture_callbacks=text_dat('texture_loader', '''import numpy as np
 from pathlib import Path
 cache = {}
@@ -116,7 +126,7 @@ def onCook(scriptOp):
     scriptOp.copyNumpyArray(cache[key])
 ''', -800, 120)
 callbacks=base.create(parameterexecuteDAT,'controls_callbacks')
-callbacks.par.op='..'; callbacks.par.pars='Restart Startshow Fit Approach Eventindex Prepareudp Playudp Pauseudp Stopudp'; callbacks.par.onpulse=True
+callbacks.par.op='..'; callbacks.par.pars='Restart Startshow Fit Approach Openviewer Eventindex Prepareudp Playudp Pauseudp Stopudp'; callbacks.par.onpulse=True
 callbacks.text='def onPulse(par):\n    op("io_runtime" if par.name.endswith("udp") else "runtime").module.pulse(par.name)\n    return\ndef onValueChange(par, prev):\n    if par.name == "Eventindex":\n        rows = op("runtime").module.inspect(int(par.eval()))\n        table = op("SOURCE_EVENT")\n        table.clear(); table.appendRow(["field", "recorded value"])\n        for key, value in rows.items(): table.appendRow([key, value])\n    return\n'
 callbacks.nodeX=-800; callbacks.nodeY=580
 
@@ -162,7 +172,7 @@ def resolution(node, scale=1):
     node.par.resolutionh.expr=f'max(1, int(parent().par.Height * {factor}))'
 
 def glsl_top(name, filename, inputs=(), scale=1):
-    source=(ROOT/'cinematic'/filename).read_text()
+    source=(ROOT/'cinematic'/filename).read_text(encoding='utf-8')
     dat=text_dat(name+'_shader',source,1760,-len(base.children)*12)
     node=base.create(glslTOP,name); node.par.pixeldat=dat; node.par.glslversion='glsl430'; node.par.format='rgba16float'
     for i,item in enumerate(inputs[:3]): node.inputConnectors[i].connect(item)
@@ -180,11 +190,11 @@ core_depth=base.create(renderselectTOP,'plasma_depth'); core_depth.par.top=core;
 core_depth.nodeX=1620; core_depth.nodeY=440
 # Depth is sampled in normalized UV; its camera matches the full-resolution field.
 draws=[]
-contract=json.loads((ROOT/'shaders/contract.json').read_text())
+contract=json.loads((ROOT/'shaders/contract.json').read_text(encoding='utf-8'))
 attr_names={'sPositions':'position','sData':'data','sSizes':'size','sMotion':'motion','sStarts':'start','sEnds':'end','sColors':'color'}
 for index,(kind,group_name) in enumerate([('atmosphere','halos'),('filament','filaments'),('dust','dust'),('stars','stars'),('clouds','clouds')]):
     group=layout['groups'][group_name]
-    vertex=(ROOT/'cinematic/field'/f'{kind}.vert').read_text(); fragment=(ROOT/'cinematic/field'/f'{kind}.frag').read_text()
+    vertex=(ROOT/'cinematic/field'/f'{kind}.vert').read_text(encoding='utf-8'); fragment=(ROOT/'cinematic/field'/f'{kind}.frag').read_text(encoding='utf-8')
     vd=text_dat(kind+'_vertex',vertex,550,-index*250+55); pd=text_dat(kind+'_fragment',fragment,730,-index*250+55)
     mat=base.create(glslMAT,kind+'_material')
     mat.par.vdat=vd; mat.par.pdat=pd; mat.par.glslversion='glsl430'
@@ -215,24 +225,37 @@ bloom.par.format='rgba16float'; bloom.par.output='bloom'; bloom.par.preblackleve
 bloom.par.minbloomradius=.08; bloom.par.maxbloomradius=.55; bloom.par.bloomintensity=.8
 bloom.nodeX=2300; bloom.nodeY=-170
 scattering=base.create(blurTOP,'anamorphic_scattering'); scattering.inputConnectors[0].connect(bloom)
-scattering.par.method='horz'; scattering.par.type='gaussian'; scattering.par.size=65; scattering.par.preshrink=2
+if hasattr(scattering.par,'method'): scattering.par.method='horz'
+else: scattering.par.filterscaley=0; scattering.par.filterscalez=0
+scattering.par.type='gaussian'; scattering.par.size=65; scattering.par.preshrink=2
 scattering.par.format='rgba16float'; scattering.nodeX=2520; scattering.nodeY=-340
 finish=glsl_top('film_grade','finish.frag',[composite,bloom,scattering]); finish.nodeX=2780; finish.nodeY=0
 antialias=base.create(antialiasTOP,'subpixel_antialias'); antialias.inputConnectors[0].connect(finish); antialias.par.quality='high'; antialias.nodeX=2970; antialias.nodeY=0
-out=base.create(nullTOP,'OUT_CINEMATIC'); out.inputConnectors[0].connect(antialias); out.nodeX=3180; out.nodeY=0
+title_builder=text_dat('title_builder',(ROOT/'cinematic/title_layer.py').read_text(encoding='utf-8'),2600,-850)
+title=title_builder.module.build_title(base,antialias,core,glsl_top,parameter,textTOP,compositeTOP)
+out=base.create(nullTOP,'OUT_CINEMATIC'); out.inputConnectors[0].connect(title); out.nodeX=3620; out.nodeY=0
 out.viewer=True; base.par.opviewer=out; base.viewer=True
+inspector_builder=text_dat('inspector_builder',(ROOT/'cinematic/inspector_builder.py').read_text(encoding='utf-8'),-800,1200)
+inspector_builder.module.build_inspector(base,text_dat,(ROOT/'cinematic/inspector.py').read_text(encoding='utf-8'),textTOP,scriptTOP,compositeTOP)
+viewer_builder=text_dat('viewer_builder',(ROOT/'cinematic/viewer_builder.py').read_text(encoding='utf-8'),-1400,1200)
+viewer_builder.module.build_viewer(base,(ROOT/'cinematic/viewer_callbacks.py').read_text(encoding='utf-8'),
+    containerCOMP,buttonCOMP,sliderCOMP,listCOMP,windowCOMP,panelexecuteDAT,textDAT)
+base.op('interaction').module._replay()
 inspector=base.create(tableDAT,'SOURCE_EVENT'); inspector.nodeX=-600; inspector.nodeY=850
 inspector.appendRow(['field','recorded value'])
 for key,value in runtime.module.inspect(0).items():inspector.appendRow([key,value])
 
 clock=base.create(executeDAT,'clock'); clock.text='def onFrameStart(frame):\n    op("runtime").module.update()\n    return\n'; clock.par.framestart=True
 clock.text+='\ndef onExit():\n    op("io_runtime").module.close()\n'
+clock.text+='    op("interaction").module.close()\n'
+clock.text+='\ndef onStart():\n    if parent().par.Openonload:\n        run("op(args[0]).par.winopen.pulse()", op("WINDOW_CINEMATIC").path, delayFrames=3)\n'
+clock.par.start=True
 clock.par.exit=True
 clock.nodeX=-800; clock.nodeY=440
 
 # Remove unused editor templates generated by MAT/TOP constructors, retaining
 # the real shader DATs and compile reports. This leaves a readable native graph.
-used_dats={runtime.path,texture_callbacks.path,clock.path,callbacks.path}
+used_dats={runtime.path,texture_callbacks.path,clock.path,callbacks.path,base.op('viewer_callbacks').path}
 for node in base.children:
     for name in ['vdat','pdat','pixeldat','vertexdat','callbacks']:
         p=getattr(node.par,name,None)

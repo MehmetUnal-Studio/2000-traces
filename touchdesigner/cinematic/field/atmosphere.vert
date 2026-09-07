@@ -38,6 +38,7 @@ vec4 instanceTexel(sampler2D image,int index) {
 
 
   uniform float uSelLane;
+  uniform float uSolo;
   uniform float uHoverLane;
   out vec2 vUv;
   out vec3 vColor;
@@ -100,7 +101,7 @@ vec2 uv=P.xy+0.5;
     gl_Position=TDWorldToProj(vec4(tdViewToWorld(viewPosition.xyz),1.0));
     float focus=1.0-step(0.5,abs(aData.y-uSelLane));
     float hover=(1.0-step(0.5,abs(aData.y-uHoverLane)))*0.5;
-    float isolation=uSelLane < -0.5 ? 1.0 : mix(0.15,2.3,focus);
+    float isolation=uSelLane < -0.5 ? 1.0 : mix(uSolo > 0.5 ? 0.0 : 0.15, 2.3, focus);
     vAlpha=aSize.y*step(aData.x,uTime+0.0001)*isolation*(1.0+hover);
     vColor=nebulaLight(aData.w);
     vUv=uv;
